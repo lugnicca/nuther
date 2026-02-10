@@ -10,6 +10,7 @@ import (
 	"nuther/internal/config"
 	"nuther/internal/platform"
 	"nuther/internal/ui"
+	"nuther/internal/ui/components"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -20,6 +21,9 @@ import (
 var version = "dev"
 
 func main() {
+	// Propagate build-time version to UI header
+	components.AppVersion = version
+
 	// Handle --version / -v
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" || arg == "-v" {

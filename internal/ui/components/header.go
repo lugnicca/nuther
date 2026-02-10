@@ -9,9 +9,11 @@ import (
 
 const (
 	AppName        = "Nuther"
-	AppVersion     = "0.1.0"
 	AppDescription = "S.M.A.R.T. Disk Health Monitor"
 )
+
+// AppVersion is set at startup from the build-time ldflags value.
+var AppVersion = "dev"
 
 // Logo ASCII art
 const logo = `
