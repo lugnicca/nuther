@@ -28,8 +28,8 @@ func TestRenderHeader(t *testing.T) {
 	if header == "" {
 		t.Error("Header should not be empty with logo")
 	}
-	if !strings.Contains(header, "NUTHER") || !strings.Contains(header, AppName) {
-		// ASCII logo or app name should be present
+	if !strings.Contains(header, "NUTHER") && !strings.Contains(header, AppName) {
+		t.Error("Header should contain either NUTHER or AppName")
 	}
 
 	// Without logo

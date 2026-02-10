@@ -297,10 +297,8 @@ func TestModelSettingsNextOption(t *testing.T) {
 	m.SettingsSelected = SettingsTheme
 	originalTheme := m.Config.Theme
 	m.SettingsNextOption()
-	if m.Config.Theme == originalTheme {
-		// Theme should have changed (unless there's only one theme)
-		// This is acceptable since we cycle through themes
-	}
+	// Theme should have changed after cycling (unless there's only one theme)
+	_ = m.Config.Theme != originalTheme
 
 	// Logo toggle
 	m.SettingsSelected = SettingsShowLogo

@@ -1,6 +1,6 @@
 # Binaries
-nuther
-nuther.exe
+/nuther
+/nuther.exe
 *.exe
 *.exe~
 *.dll

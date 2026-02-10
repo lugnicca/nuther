@@ -105,7 +105,10 @@ func CopyFileToClipboard(imagePath string) error {
 			if err := cmd.Start(); err != nil {
 				return err
 			}
-			stdin.Write(imageData)
+			if _, err := stdin.Write(imageData); err != nil {
+				stdin.Close()
+				return err
+			}
 			stdin.Close()
 			return cmd.Wait()
 		}

@@ -63,21 +63,21 @@ func TestConfigValidate(t *testing.T) {
 func TestConfigValidateAndFix(t *testing.T) {
 	// Invalid theme gets fixed
 	cfg := &Config{Theme: "nonexistent"}
-	cfg.ValidateAndFix()
+	_ = cfg.ValidateAndFix()
 	if cfg.Theme != "default" {
 		t.Errorf("Theme should be fixed to default, got %q", cfg.Theme)
 	}
 
 	// Empty theme gets fixed
 	cfg = &Config{}
-	cfg.ValidateAndFix()
+	_ = cfg.ValidateAndFix()
 	if cfg.Theme != "default" {
 		t.Errorf("Empty theme should be fixed to default, got %q", cfg.Theme)
 	}
 
 	// Colors get applied from theme
 	cfg = &Config{Theme: "nord"}
-	cfg.ValidateAndFix()
+	_ = cfg.ValidateAndFix()
 	nordTheme := GetTheme("nord")
 	if cfg.Colors.AccentPrimary != nordTheme.Colors.AccentPrimary {
 		t.Errorf("Colors should be applied from nord theme")

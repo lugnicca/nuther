@@ -54,7 +54,7 @@ func init() {
 		}
 
 		key := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
-		Themes[key] = Theme{Name: ut.Name, Colors: ut.Colors}
+		Themes[key] = Theme(ut)
 		builtinThemeKeys[key] = struct{}{}
 		slog.Debug("loaded embedded theme", "key", key, "name", ut.Name)
 	}

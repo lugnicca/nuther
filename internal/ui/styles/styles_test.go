@@ -324,7 +324,7 @@ func TestNewStylesWithDifferentThemes(t *testing.T) {
 			s := NewStyles(cfg)
 
 			if s == nil {
-				t.Errorf("NewStyles with theme %q returned nil", themeName)
+				t.Fatalf("NewStyles with theme %q returned nil", themeName)
 			}
 
 			// Verify colors match theme
