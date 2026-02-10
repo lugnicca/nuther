@@ -9,7 +9,7 @@ import (
 
 const (
 	AppName        = "Nuther"
-	AppVersion     = "0.0.1"
+	AppVersion     = "0.1.0"
 	AppDescription = "S.M.A.R.T. Disk Health Monitor"
 )
 
