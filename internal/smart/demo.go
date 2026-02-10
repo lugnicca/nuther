@@ -1,0 +1,140 @@
+package smart
+
+import "time"
+
+// CreateDemoData creates sample drive data for demonstration purposes
+func CreateDemoData() []DriveInfo {
+	return []DriveInfo{
+		createDemoNVMeDrive(),
+		createDemoHDDGood(),
+		createDemoHDDCaution(),
+	}
+}
+
+func createDemoNVMeDrive() DriveInfo {
+	return DriveInfo{
+		Device:         "/dev/nvme0n1",
+		Model:          "Samsung SSD 970 EVO Plus 1TB",
+		IsDemo:         true,
+		ModelFamily:    "Samsung NVMe SSD",
+		Serial:         "S4EVNX0T123456K",
+		Firmware:       "2B2QEXM7",
+		Capacity:       "1.00 TB",
+		CapacityBytes:  1000204886016,
+		FormFactor:     "M.2",
+		Interface:      "NVMe",
+		IsNVMe:         true,
+		IsSSD:          true,
+		SmartSupported: true,
+		SmartEnabled:   true,
+		HealthStatus:   HealthGood,
+		HealthPassed:   true,
+		Temperature:    38,
+		PowerOnHours:   12547,
+		PowerCycles:    1823,
+		LastUpdate:     time.Now(),
+		NVMeAttributes: []NVMeAttribute{
+			{"Temperature", "38°C", 38, HealthGood, "Current drive temperature"},
+			{"Available Spare", "100%", 100, HealthGood, "Remaining spare capacity"},
+			{"Spare Threshold", "10%", 10, HealthGood, "Spare capacity warning threshold"},
+			{"Percentage Used", "3%", 3, HealthGood, "NVM subsystem life used"},
+			{"Data Read", "42.50 TB", 85000000, HealthGood, "Total data read"},
+			{"Data Written", "38.20 TB", 76400000, HealthGood, "Total data written"},
+			{"Host Read Commands", "1,234,567,890", 1234567890, HealthGood, "Read commands processed"},
+			{"Host Write Commands", "987,654,321", 987654321, HealthGood, "Write commands processed"},
+			{"Controller Busy Time", "4521 minutes", 4521, HealthGood, "Controller busy time"},
+			{"Power Cycles", "1,823", 1823, HealthGood, "Power cycles"},
+			{"Power On Hours", "1 years, 157 days", 12547, HealthGood, "Total power on time"},
+			{"Unsafe Shutdowns", "12", 12, HealthGood, "Unsafe shutdowns"},
+			{"Media Errors", "0", 0, HealthGood, "Media errors"},
+			{"Error Log Entries", "0", 0, HealthGood, "Error log entries"},
+		},
+	}
+}
+
+func createDemoHDDGood() DriveInfo {
+	return DriveInfo{
+		Device:         "/dev/sda",
+		Model:          "WDC WD40EZRZ-00GXCB0",
+		IsDemo:         true,
+		ModelFamily:    "Western Digital Blue",
+		Serial:         "WD-WCC7K3LVJKEE",
+		Firmware:       "80.00A80",
+		Capacity:       "4.00 TB",
+		CapacityBytes:  4000787030016,
+		FormFactor:     "3.5 inches",
+		RotationRate:   5400,
+		Interface:      "SATA HDD (5400 RPM)",
+		SmartSupported: true,
+		SmartEnabled:   true,
+		HealthStatus:   HealthGood,
+		HealthPassed:   true,
+		Temperature:    34,
+		PowerOnHours:   28934,
+		PowerCycles:    423,
+		LastUpdate:     time.Now(),
+		Attributes: []SmartAttribute{
+			{1, "Raw_Read_Error_Rate", 200, 200, 51, 0, "0", "POSR-K", "Pre-fail", "Always", ""},
+			{3, "Spin_Up_Time", 178, 176, 21, 6050, "6050", "POS--K", "Pre-fail", "Always", ""},
+			{4, "Start_Stop_Count", 100, 100, 0, 423, "423", "-O--CK", "Old_age", "Always", ""},
+			{5, "Reallocated_Sector_Ct", 200, 200, 140, 0, "0", "PO--CK", "Pre-fail", "Always", ""},
+			{7, "Seek_Error_Rate", 200, 200, 0, 0, "0", "-OSR-K", "Old_age", "Always", ""},
+			{9, "Power_On_Hours", 67, 67, 0, 28934, "28934", "-O--CK", "Old_age", "Always", ""},
+			{10, "Spin_Retry_Count", 100, 100, 0, 0, "0", "PO--CK", "Pre-fail", "Always", ""},
+			{12, "Power_Cycle_Count", 100, 100, 0, 423, "423", "-O--CK", "Old_age", "Always", ""},
+			{192, "Power-Off_Retract_Count", 200, 200, 0, 89, "89", "-O--CK", "Old_age", "Always", ""},
+			{193, "Load_Cycle_Count", 199, 199, 0, 5234, "5234", "-O--CK", "Old_age", "Always", ""},
+			{194, "Temperature_Celsius", 117, 106, 0, 34, "34", "-O---K", "Old_age", "Always", ""},
+			{196, "Reallocated_Event_Count", 200, 200, 0, 0, "0", "-O--CK", "Old_age", "Always", ""},
+			{197, "Current_Pending_Sector", 200, 200, 0, 0, "0", "-O--CK", "Old_age", "Always", ""},
+			{198, "Offline_Uncorrectable", 200, 200, 0, 0, "0", "----CK", "Old_age", "Offline", ""},
+			{199, "UDMA_CRC_Error_Count", 200, 200, 0, 0, "0", "-O--CK", "Old_age", "Always", ""},
+		},
+	}
+}
+
+func createDemoHDDCaution() DriveInfo {
+	return DriveInfo{
+		Device:               "/dev/sdb",
+		Model:                "Seagate ST2000DM008-2FR102",
+		IsDemo:               true,
+		ModelFamily:          "Seagate Barracuda",
+		Serial:               "ZFL1KXYZ",
+		Firmware:             "0001",
+		Capacity:             "2.00 TB",
+		CapacityBytes:        2000398934016,
+		FormFactor:           "3.5 inches",
+		RotationRate:         7200,
+		Interface:            "SATA HDD (7200 RPM)",
+		SmartSupported:       true,
+		SmartEnabled:         true,
+		HealthStatus:         HealthCaution,
+		HealthPassed:         true,
+		Temperature:          42,
+		PowerOnHours:         45678,
+		PowerCycles:          2341,
+		ReallocatedSectors:   8,
+		PendingSectors:       2,
+		LastUpdate:           time.Now(),
+		Attributes: []SmartAttribute{
+			{1, "Raw_Read_Error_Rate", 78, 64, 6, 12847592, "12847592", "POSR--", "Pre-fail", "Always", ""},
+			{3, "Spin_Up_Time", 96, 96, 0, 0, "0", "PO----", "Pre-fail", "Always", ""},
+			{4, "Start_Stop_Count", 96, 96, 20, 2341, "2341", "-O--CK", "Old_age", "Always", ""},
+			{5, "Reallocated_Sector_Ct", 100, 100, 10, 8, "8", "PO--CK", "Pre-fail", "Always", ""},
+			{7, "Seek_Error_Rate", 87, 60, 45, 534287, "534287", "-OSR--", "Old_age", "Always", ""},
+			{9, "Power_On_Hours", 48, 48, 0, 45678, "45678", "-O--CK", "Old_age", "Always", ""},
+			{10, "Spin_Retry_Count", 100, 100, 97, 0, "0", "PO--C-", "Pre-fail", "Always", ""},
+			{12, "Power_Cycle_Count", 96, 96, 20, 2341, "2341", "-O--CK", "Old_age", "Always", ""},
+			{184, "End-to-End_Error", 100, 100, 99, 0, "0", "-O--CK", "Old_age", "Always", ""},
+			{187, "Reported_Uncorrect", 98, 98, 0, 2, "2", "-O--CK", "Old_age", "Always", ""},
+			{188, "Command_Timeout", 100, 100, 0, 0, "0", "-O--CK", "Old_age", "Always", ""},
+			{189, "High_Fly_Writes", 100, 100, 0, 0, "0", "-O-RCK", "Old_age", "Offline", ""},
+			{190, "Airflow_Temperature_Cel", 58, 48, 40, 42, "42", "-O---K", "Old_age", "Always", ""},
+			{194, "Temperature_Celsius", 42, 52, 0, 42, "42", "-O---K", "Old_age", "Always", ""},
+			{195, "Hardware_ECC_Recovered", 18, 2, 0, 12847592, "12847592", "-O-RC-", "Old_age", "Offline", ""},
+			{197, "Current_Pending_Sector", 100, 100, 0, 2, "2", "-O--C-", "Old_age", "Always", ""},
+			{198, "Offline_Uncorrectable", 100, 100, 0, 0, "0", "----C-", "Old_age", "Offline", ""},
+			{199, "UDMA_CRC_Error_Count", 200, 200, 0, 0, "0", "-OSRCK", "Old_age", "Always", ""},
+		},
+	}
+}

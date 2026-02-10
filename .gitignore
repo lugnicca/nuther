@@ -1,0 +1,58 @@
+# Binaries
+nuther
+nuther.exe
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Build output
+/bin/
+/dist/
+
+# Test binary
+*.test
+*.test.exe
+
+# Coverage
+*.out
+coverage.html
+cover_*.html
+coverage.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Go workspace
+go.work
+go.work.sum
+
+# Local config (keep defaults)
+config.yaml
+*.local.yaml
+
+# Logs
+*.log
+
+# Debug
+debug/
+__debug_bin*
+
+# Local notes
+*.md
+!README.md
+!CLAUDE.md
+!CHANGELOG.md
+tasks/
+nul
+-
+.claude/
