@@ -86,7 +86,7 @@ func TestConfigValidateAndFix(t *testing.T) {
 	// Invalid color gets replaced
 	cfg = DefaultConfig()
 	cfg.Colors.AccentPrimary = "invalid"
-	cfg.ValidateAndFix()
+	_ = cfg.ValidateAndFix()
 	if cfg.Colors.AccentPrimary == "invalid" {
 		t.Error("Invalid color should be replaced")
 	}
@@ -192,7 +192,7 @@ func TestValidateAndFixPartialColorMerge(t *testing.T) {
 			Warning: "#ff0000",
 		},
 	}
-	cfg.ValidateAndFix()
+	_ = cfg.ValidateAndFix()
 
 	theme := GetTheme("default")
 	if cfg.Colors.Warning != "#ff0000" {

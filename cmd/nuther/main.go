@@ -130,5 +130,5 @@ func printStartupWarning() {
 	fmt.Println("     Press Enter to continue...")
 
 	var input string
-	fmt.Scanln(&input)
+	_, _ = fmt.Scanln(&input)
 }
