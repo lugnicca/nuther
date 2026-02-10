@@ -1,0 +1,2 @@
+# Force LF for embedded files to ensure consistent checksums across platforms
+internal/config/themes/*.yaml text eol=lf

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"os"
@@ -531,17 +532,17 @@ func TestEmbeddedThemeChecksums(t *testing.T) {
 	// Precomputed SHA256 checksums of embedded theme files.
 	// Update these values when intentionally modifying a theme.
 	expectedChecksums := map[string]string{
-		"atomic-tangerine.yaml": "622109598a2764b0c2b95f68832698f77a05e61780e3cb7cb6a415b4a637afef",
-		"catppuccin.yaml":       "4bc5211c8b39ecfeafa76749b5e900108e6a1606e3a868be4317f316c2c6c2b0",
-		"default.yaml":          "6dfbe21105129f7b8f30ea07f87d55db099379eb8b0fc5e445b2d11f08a04ee0",
-		"dracula.yaml":          "ed913700a1d2a53f5fcf4528e2b59c580ed836af06d151eed538def7a5528d71",
-		"everforest.yaml":       "dcc874f72bee237540ee677caadd0f16e79ade9fd0242f119ed830ff0afd66ea",
-		"gruvbox.yaml":          "378da894b17f0447c3fe9811f97de68fcf1bd5e67b8df60140c7beb727c62301",
-		"nord.yaml":             "7129ba1d6cb1b1b8188bcd3a759396b0e660626cd53979c23cabe086bdd9e502",
-		"rose-petale.yaml":      "5ea50bede842a8170d2e58febf3d76cf1bd37ea9bec558cda0aa52474f2efdc4",
-		"solarized-dark.yaml":   "d39aba4e58239256144d95875b40ac03061e2ebc84bb864bf89f1ebb7a0afa00",
-		"sous-bois.yaml":        "100045a880d52d592d0d73b1fbcc296b2bad9f1b39daeafbc2080982e554d22c",
-		"tokyo-night.yaml":      "d74a31cac20a99044f68ba656b765ee501e78000dcfc1d01e123e9246ce200a4",
+		"atomic-tangerine.yaml": "f11754bd076bb2deabe6e388d2b580d750b78a229184d2a73ae1d872b4f299d7",
+		"catppuccin.yaml":       "51fdf126f9333d77962904e911e2b2074196b380699ccccb76bbbebab085d830",
+		"default.yaml":          "4618417963cdadcb11a31384c0e92e3f76883bc75a1b74eedee19eb2af60229b",
+		"dracula.yaml":          "5af56f8737e8cdb398147fa5fd571ac55be9dcdf5a82c498fe7b224c5022ca75",
+		"everforest.yaml":       "1cf6d6b23e330e355b849bca82f35c1506d475f88faf33b1737bdf0f298206e4",
+		"gruvbox.yaml":          "82e59a7d093a93b1a6b1cc76dba9e0a6ee7451122b475f2bfc8f4a3efa8e33d4",
+		"nord.yaml":             "c73659d7dc06e33d6de054380f02d66b77cd3585efe5f498b88c4337f3c740e4",
+		"rose-petale.yaml":      "99212c3e3f98af0456acc833d1bcd7b847622d2a6ddfd6a6de0c8c66829b942d",
+		"solarized-dark.yaml":   "ca6b269ebfad29543175991ff479723be66c0c132716bf0dade9093cc3a4b32b",
+		"sous-bois.yaml":        "4ec5dedfd78772c40f7c9d270a8f7865f009d620b0553d43e56f017f132d528e",
+		"tokyo-night.yaml":      "7308c2baff91620ecc2146cf3b7bc76c07985dabc7060b8854d41006cfd07d28",
 	}
 
 	entries, err := themesFS.ReadDir("themes")
@@ -560,6 +561,8 @@ func TestEmbeddedThemeChecksums(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to read %s: %v", entry.Name(), err)
 		}
+		// Normalize line endings to LF for consistent checksums across platforms
+		data = bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
 		hash := sha256.Sum256(data)
 		checksum := fmt.Sprintf("%x", hash)
 
