@@ -177,10 +177,11 @@ func parseDriveInfo(device string, s SmartctlOutput) DriveInfo {
 		Temperature:    s.Temperature.Current,
 		PowerOnHours:   s.PowerOnTime.Hours,
 		PowerCycles:    s.PowerCycleCount,
-		SmartSupported: true,
-		SmartEnabled:   true,
-		HealthPassed:   s.SmartStatus.Passed,
-		LastUpdate:     time.Now(),
+		SmartSupported:    true,
+		SmartEnabled:      true,
+		HealthPassed:      s.SmartStatus.Passed,
+		WearLevelingValue: -1,
+		LastUpdate:        time.Now(),
 	}
 
 	if s.SmartStatus.Passed {
@@ -384,6 +385,10 @@ func parseATADrive(drive *DriveInfo, s SmartctlOutput) {
 		case AttrTemperature:
 			if drive.Temperature == 0 {
 				drive.Temperature = int(attr.Raw.Value)
+			}
+		case AttrWearLevelingCount, AttrMediaWearoutInd:
+			if drive.WearLevelingValue < 0 {
+				drive.WearLevelingValue = attr.Value
 			}
 		}
 	}

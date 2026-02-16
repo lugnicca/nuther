@@ -18,14 +18,8 @@ func RenderDriveHeader(drive smart.DriveInfo, s *styles.Styles) string {
 	healthIcon := s.GetHealthIcon(drive.HealthStatus)
 	driveIcon := s.GetDriveIcon(&drive)
 
-	// Calculate health percentage
-	healthPercent := 100
-	if drive.IsNVMe && drive.NVMeHealthLog != nil {
-		healthPercent = 100 - drive.NVMeHealthLog.PercentageUsed
-		if healthPercent < 0 {
-			healthPercent = 0
-		}
-	}
+	// Calculate health percentage (remaining life)
+	healthPercent := drive.HealthPercent()
 
 	// First line: Icon + Model + Health badge
 	header.WriteString(" ")

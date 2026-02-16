@@ -28,6 +28,8 @@ const (
 	AttrWriteErrorRate       = 200
 	AttrSoftReadErrorRate2   = 201
 	AttrTAIncreaseCount      = 202
+	AttrWearLevelingCount    = 177
+	AttrMediaWearoutInd      = 233
 	AttrTotalLBAsWritten     = 241
 	AttrTotalLBAsRead        = 242
 )

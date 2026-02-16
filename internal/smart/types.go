@@ -124,6 +124,7 @@ type DriveInfo struct {
 	PendingSectors       int64
 	UncorrectableSectors int64
 	CRCErrors            int64
+	WearLevelingValue    int // Normalized wear value (100=new, 0=worn out), -1 if unavailable
 
 	Attributes     []SmartAttribute
 	NVMeAttributes []NVMeAttribute
@@ -137,6 +138,31 @@ type DriveInfo struct {
 
 	LastUpdate time.Time
 	ScanError  error
+}
+
+// HealthPercent returns the health/remaining-life percentage for the drive.
+// NVMe: 100 - PercentageUsed. SATA SSD: normalized wear leveling value.
+// HDD/other: mapped from HealthStatus (GOOD=100, CAUTION=50, BAD=0).
+func (d *DriveInfo) HealthPercent() int {
+	if d.IsNVMe && d.NVMeHealthLog != nil {
+		p := 100 - d.NVMeHealthLog.PercentageUsed
+		if p < 0 {
+			return 0
+		}
+		return p
+	}
+	if d.WearLevelingValue >= 0 {
+		return d.WearLevelingValue
+	}
+	// Fallback: derive from overall health status
+	switch d.HealthStatus {
+	case HealthBad:
+		return 0
+	case HealthCaution:
+		return 50
+	default:
+		return 100
+	}
 }
 
 // GetDriveType returns a human-readable drive type string
