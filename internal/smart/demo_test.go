@@ -32,6 +32,9 @@ func TestCreateDemoData(t *testing.T) {
 	if len(nvmeDrive.NVMeAttributes) == 0 {
 		t.Error("NVMe drive should have NVMeAttributes")
 	}
+	if nvmeDrive.TotalBytesWritten <= 0 {
+		t.Errorf("NVMe TotalBytesWritten = %d, want > 0", nvmeDrive.TotalBytesWritten)
+	}
 
 	// Check good HDD demo drive
 	hddGood := drives[1]
@@ -58,6 +61,14 @@ func TestCreateDemoData(t *testing.T) {
 	}
 	if hddCaution.PendingSectors == 0 {
 		t.Error("Caution HDD should have pending sectors")
+	}
+
+	// HDDs should have TotalBytesWritten == -1 (unavailable)
+	if hddGood.TotalBytesWritten != -1 {
+		t.Errorf("HDD good TotalBytesWritten = %d, want -1", hddGood.TotalBytesWritten)
+	}
+	if hddCaution.TotalBytesWritten != -1 {
+		t.Errorf("HDD caution TotalBytesWritten = %d, want -1", hddCaution.TotalBytesWritten)
 	}
 }
 

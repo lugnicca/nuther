@@ -113,6 +113,12 @@ func TestParseDriveInfo_NVMe(t *testing.T) {
 		t.Errorf("MediaErrors = %d, want %d", drive.NVMeHealthLog.MediaErrors, 0)
 	}
 
+	// Check TotalBytesWritten (DataUnitsWritten=18000000 * 512 * 1000)
+	expectedBytes := int64(18000000) * 512 * 1000
+	if drive.TotalBytesWritten != expectedBytes {
+		t.Errorf("TotalBytesWritten = %d, want %d", drive.TotalBytesWritten, expectedBytes)
+	}
+
 	// Check NVMe attributes were created
 	if len(drive.NVMeAttributes) == 0 {
 		t.Error("NVMeAttributes is empty")
@@ -174,6 +180,11 @@ func TestParseDriveInfo_SATA_SSD(t *testing.T) {
 	if !foundReallocated {
 		t.Error("Reallocated_Sector_Ct attribute not found")
 	}
+
+	// SATA SSD test data has no attr 241, so TotalBytesWritten should remain -1
+	if drive.TotalBytesWritten != -1 {
+		t.Errorf("TotalBytesWritten = %d, want -1 (no attr 241)", drive.TotalBytesWritten)
+	}
 }
 
 func TestParseDriveInfo_HDD(t *testing.T) {
@@ -215,6 +226,11 @@ func TestParseDriveInfo_HDD(t *testing.T) {
 
 	if drive.PowerOnHours != 15000 {
 		t.Errorf("PowerOnHours = %d, want %d", drive.PowerOnHours, 15000)
+	}
+
+	// HDD has no attr 241, so TotalBytesWritten should remain -1
+	if drive.TotalBytesWritten != -1 {
+		t.Errorf("TotalBytesWritten = %d, want -1 (no attr 241)", drive.TotalBytesWritten)
 	}
 }
 

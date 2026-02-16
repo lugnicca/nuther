@@ -124,7 +124,8 @@ type DriveInfo struct {
 	PendingSectors       int64
 	UncorrectableSectors int64
 	CRCErrors            int64
-	WearLevelingValue    int // Normalized wear value (100=new, 0=worn out), -1 if unavailable
+	WearLevelingValue    int   // Normalized wear value (100=new, 0=worn out), -1 if unavailable
+	TotalBytesWritten   int64 // Total bytes written, -1 if unavailable
 
 	Attributes     []SmartAttribute
 	NVMeAttributes []NVMeAttribute

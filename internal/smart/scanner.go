@@ -181,6 +181,7 @@ func parseDriveInfo(device string, s SmartctlOutput) DriveInfo {
 		SmartEnabled:      true,
 		HealthPassed:      s.SmartStatus.Passed,
 		WearLevelingValue: -1,
+		TotalBytesWritten: -1,
 		LastUpdate:        time.Now(),
 	}
 
@@ -236,6 +237,7 @@ func parseNVMeDrive(drive *DriveInfo, s SmartctlOutput) {
 	drive.Temperature = nvme.Temperature
 	drive.PowerOnHours = nvme.PowerOnHours
 	drive.PowerCycles = nvme.PowerCycles
+	drive.TotalBytesWritten = nvme.DataUnitsWritten * 512 * 1000
 
 	drive.NVMeAttributes = buildNVMeAttributes(nvme)
 }
@@ -390,6 +392,12 @@ func parseATADrive(drive *DriveInfo, s SmartctlOutput) {
 			if drive.WearLevelingValue < 0 {
 				drive.WearLevelingValue = attr.Value
 			}
+		case AttrTotalLBAsWritten:
+			sectorSize := int64(drive.LogicalSector)
+			if sectorSize == 0 {
+				sectorSize = 512
+			}
+			drive.TotalBytesWritten = attr.Raw.Value * sectorSize
 		}
 	}
 }

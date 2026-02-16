@@ -438,11 +438,12 @@ func TestRenderDriveHeader_SATA_SSD(t *testing.T) {
 func TestRenderStatsCards_NVMe(t *testing.T) {
 	s := newTestStyles()
 	drive := smart.DriveInfo{
-		Temperature:  38,
-		PowerOnHours: 2500,
-		PowerCycles:  150,
-		IsNVMe:       true,
-		Interface:    "NVMe",
+		Temperature:       38,
+		PowerOnHours:      2500,
+		PowerCycles:       150,
+		IsNVMe:            true,
+		Interface:         "NVMe",
+		TotalBytesWritten: 76400000 * 512 * 1000,
 	}
 
 	result := RenderStatsCards(drive, s)
@@ -455,26 +456,33 @@ func TestRenderStatsCards_NVMe(t *testing.T) {
 	if !strings.Contains(result, "POWER ON HRS") {
 		t.Error("Stats cards should contain POWER ON HRS label")
 	}
-	if !strings.Contains(result, "NVMe") {
-		t.Error("Stats cards should show NVMe interface")
+	if !strings.Contains(result, "DATA WRITTEN") {
+		t.Error("Stats cards should contain DATA WRITTEN label")
+	}
+	if !strings.Contains(result, "TB") {
+		t.Error("Stats cards should show data written in TB")
 	}
 }
 
 func TestRenderStatsCards_SATA(t *testing.T) {
 	s := newTestStyles()
 	drive := smart.DriveInfo{
-		Temperature:  32,
-		PowerOnHours: 5000,
-		PowerCycles:  500,
-		IsNVMe:       false,
-		Interface:    "SATA SSD",
+		Temperature:       32,
+		PowerOnHours:      5000,
+		PowerCycles:       500,
+		IsNVMe:            false,
+		Interface:         "SATA SSD",
+		TotalBytesWritten: -1,
 	}
 
 	result := RenderStatsCards(drive, s)
 	if result == "" {
 		t.Error("RenderStatsCards should not return empty string")
 	}
-	if !strings.Contains(result, "SATA") {
-		t.Error("Stats cards should show SATA interface")
+	if !strings.Contains(result, "DATA WRITTEN") {
+		t.Error("Stats cards should contain DATA WRITTEN label")
+	}
+	if !strings.Contains(result, "—") {
+		t.Error("Stats cards should show — when TotalBytesWritten is unavailable")
 	}
 }

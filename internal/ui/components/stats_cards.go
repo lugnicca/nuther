@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// RenderStatsCards renders the stats cards (temperature, power-on hours, power cycles, interface)
+// RenderStatsCards renders the stats cards (temperature, power-on hours, power cycles, data written)
 func RenderStatsCards(drive smart.DriveInfo, s *styles.Styles) string {
 	var cards strings.Builder
 
@@ -49,7 +49,7 @@ func RenderStatsCards(drive smart.DriveInfo, s *styles.Styles) string {
 	cards.WriteString(borderStyle.Render("│"))
 	cards.WriteString(" ")
 	cards.WriteString(borderStyle.Render("│"))
-	cards.WriteString(s.Dim.Render(PadRight(" INTERFACE", boxWidth)))
+	cards.WriteString(s.Dim.Render(PadRight(" DATA WRITTEN", boxWidth)))
 	cards.WriteString(borderStyle.Render("│"))
 	cards.WriteString("\n")
 
@@ -71,11 +71,11 @@ func RenderStatsCards(drive smart.DriveInfo, s *styles.Styles) string {
 	cards.WriteString(borderStyle.Render("│"))
 	cards.WriteString(" ")
 	cards.WriteString(borderStyle.Render("│"))
-	ifaceStr := " SATA"
-	if drive.IsNVMe {
-		ifaceStr = " NVMe"
+	writtenStr := " —"
+	if drive.TotalBytesWritten >= 0 {
+		writtenStr = " " + smart.FormatBytes(drive.TotalBytesWritten)
 	}
-	cards.WriteString(lipgloss.NewStyle().Bold(true).Foreground(s.Info).Render(PadRight(ifaceStr, boxWidth)))
+	cards.WriteString(lipgloss.NewStyle().Bold(true).Foreground(s.Info).Render(PadRight(writtenStr, boxWidth)))
 	cards.WriteString(borderStyle.Render("│"))
 	cards.WriteString("\n")
 
