@@ -80,6 +80,7 @@ type Styles struct {
 
 	// Health badges
 	HealthGood    lipgloss.Style
+	HealthInfo    lipgloss.Style
 	HealthCaution lipgloss.Style
 	HealthBad     lipgloss.Style
 
@@ -179,6 +180,12 @@ func NewStyles(cfg *config.Config) *Styles {
 		Foreground(badgeFg).
 		Background(s.Success)
 
+	s.HealthInfo = lipgloss.NewStyle().
+		Bold(true).
+		Padding(0, 1).
+		Foreground(badgeFg).
+		Background(s.Info)
+
 	s.HealthCaution = lipgloss.NewStyle().
 		Bold(true).
 		Padding(0, 1).
@@ -268,6 +275,8 @@ func (s *Styles) GetHealthStyle(status smart.HealthStatus) lipgloss.Style {
 	switch status {
 	case smart.HealthGood:
 		return s.HealthGood
+	case smart.HealthInfo:
+		return s.HealthInfo
 	case smart.HealthCaution:
 		return s.HealthCaution
 	case smart.HealthBad:
@@ -282,6 +291,8 @@ func (s *Styles) GetHealthColor(status smart.HealthStatus) lipgloss.Color {
 	switch status {
 	case smart.HealthGood:
 		return s.Success
+	case smart.HealthInfo:
+		return s.Info
 	case smart.HealthCaution:
 		return s.Warning
 	case smart.HealthBad:
@@ -296,6 +307,8 @@ func (s *Styles) GetHealthIcon(status smart.HealthStatus) string {
 	switch status {
 	case smart.HealthGood:
 		return IconSuccess
+	case smart.HealthInfo:
+		return IconInfo
 	case smart.HealthCaution:
 		return IconWarning
 	case smart.HealthBad:

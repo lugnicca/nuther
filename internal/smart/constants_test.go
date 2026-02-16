@@ -9,10 +9,8 @@ func TestCriticalAttributesMap(t *testing.T) {
 	expectedCritical := []int{
 		AttrReallocatedSectors,
 		AttrReportedUncorrect,
-		AttrCommandTimeout,
 		AttrPendingSectors,
 		AttrOfflineUncorrectable,
-		AttrUDMACRCError,
 	}
 
 	for _, id := range expectedCritical {
@@ -24,6 +22,31 @@ func TestCriticalAttributesMap(t *testing.T) {
 	// Verify count
 	if len(CriticalAttributes) != len(expectedCritical) {
 		t.Errorf("CriticalAttributes has %d entries, want %d", len(CriticalAttributes), len(expectedCritical))
+	}
+
+	// Connection issues should NOT be in CriticalAttributes
+	connectionIDs := []int{AttrUDMACRCError, AttrCommandTimeout}
+	for _, id := range connectionIDs {
+		if CriticalAttributes[id] {
+			t.Errorf("Attribute ID %d should NOT be in CriticalAttributes (it's a connection issue)", id)
+		}
+	}
+}
+
+func TestConnectionAttributesMap(t *testing.T) {
+	expectedConnection := []int{
+		AttrCommandTimeout,
+		AttrUDMACRCError,
+	}
+
+	for _, id := range expectedConnection {
+		if !ConnectionAttributes[id] {
+			t.Errorf("Attribute ID %d should be in ConnectionAttributes", id)
+		}
+	}
+
+	if len(ConnectionAttributes) != len(expectedConnection) {
+		t.Errorf("ConnectionAttributes has %d entries, want %d", len(ConnectionAttributes), len(expectedConnection))
 	}
 }
 

@@ -52,6 +52,7 @@ func TestGetHealthStyle(t *testing.T) {
 		status smart.HealthStatus
 	}{
 		{smart.HealthGood},
+		{smart.HealthInfo},
 		{smart.HealthCaution},
 		{smart.HealthBad},
 		{"unknown"},
@@ -76,6 +77,7 @@ func TestGetHealthColor(t *testing.T) {
 		expected string
 	}{
 		{smart.HealthGood, string(s.Success)},
+		{smart.HealthInfo, string(s.Info)},
 		{smart.HealthCaution, string(s.Warning)},
 		{smart.HealthBad, string(s.Danger)},
 		{"unknown", string(s.TextDim)},
@@ -100,6 +102,7 @@ func TestGetHealthIcon(t *testing.T) {
 		expected string
 	}{
 		{smart.HealthGood, IconSuccess},
+		{smart.HealthInfo, IconInfo},
 		{smart.HealthCaution, IconWarning},
 		{smart.HealthBad, IconError},
 		{"unknown", IconInfo},
@@ -283,6 +286,7 @@ func TestStylesAreRenderable(t *testing.T) {
 		{"DriveButton", func() string { return s.DriveButton.Render("test") }},
 		{"DriveButtonSelected", func() string { return s.DriveButtonSelected.Render("test") }},
 		{"HealthGood", func() string { return s.HealthGood.Render("test") }},
+		{"HealthInfo", func() string { return s.HealthInfo.Render("test") }},
 		{"HealthCaution", func() string { return s.HealthCaution.Render("test") }},
 		{"HealthBad", func() string { return s.HealthBad.Render("test") }},
 		{"TableHeader", func() string { return s.TableHeader.Render("test") }},

@@ -93,6 +93,7 @@ func TestDemoDataIntegrity(t *testing.T) {
 		// All should have valid health status
 		validStatus := map[HealthStatus]bool{
 			HealthGood:    true,
+			HealthInfo:    true,
 			HealthCaution: true,
 			HealthBad:     true,
 			HealthUnknown: true,
@@ -134,6 +135,7 @@ func TestDemoNVMeAttributes(t *testing.T) {
 		// All attributes should have valid status
 		validStatus := map[HealthStatus]bool{
 			HealthGood:    true,
+			HealthInfo:    true,
 			HealthCaution: true,
 			HealthBad:     true,
 		}

@@ -36,9 +36,13 @@ const (
 var CriticalAttributes = map[int]bool{
 	AttrReallocatedSectors:   true,
 	AttrReportedUncorrect:    true,
-	AttrCommandTimeout:       true,
 	AttrPendingSectors:       true,
 	AttrOfflineUncorrectable: true,
-	AttrUDMACRCError:         true,
+}
+
+// ConnectionAttributes contains IDs of attributes that indicate cable/interface issues, not drive defects
+var ConnectionAttributes = map[int]bool{
+	AttrCommandTimeout: true,
+	AttrUDMACRCError:   true,
 }
 

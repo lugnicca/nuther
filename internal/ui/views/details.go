@@ -70,13 +70,7 @@ func RenderDetails(drive smart.DriveInfo, width int, s *styles.Styles) string {
 		for _, attr := range drive.Attributes {
 			for _, id := range criticalIDs {
 				if attr.ID == id {
-					color := s.Success
-					if attr.RawValue > 0 {
-						color = s.Warning
-					}
-					if attr.RawValue > 100 {
-						color = s.Danger
-					}
+					color := s.GetHealthColor(attr.GetStatus())
 					labelStyled := s.Dim.Render(components.PadRight(attr.Name+":", 28))
 					valueStyled := lipgloss.NewStyle().Bold(true).Foreground(color).Render(attr.RawString)
 					content.WriteString(fmt.Sprintf("  %s %s\n", labelStyled, valueStyled))

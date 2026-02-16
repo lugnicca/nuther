@@ -8,6 +8,7 @@ type HealthStatus string
 // Health status constants
 const (
 	HealthGood    HealthStatus = "GOOD"
+	HealthInfo    HealthStatus = "INFO"
 	HealthCaution HealthStatus = "CAUTION"
 	HealthBad     HealthStatus = "BAD"
 	HealthUnknown HealthStatus = "UNKNOWN"
@@ -35,6 +36,10 @@ func (a *SmartAttribute) GetStatus() HealthStatus {
 			return HealthBad
 		}
 		return HealthCaution
+	}
+
+	if ConnectionAttributes[a.ID] && a.RawValue > 0 {
+		return HealthInfo
 	}
 
 	if a.Threshold > 0 {
@@ -155,8 +160,12 @@ func (d *DriveInfo) GetDriveType() string {
 func (d *DriveInfo) HasCriticalIssues() bool {
 	return d.ReallocatedSectors > 0 ||
 		d.PendingSectors > 0 ||
-		d.UncorrectableSectors > 0 ||
-		d.CRCErrors > 0
+		d.UncorrectableSectors > 0
+}
+
+// HasConnectionIssues returns true if cable/interface errors are detected (not a drive defect)
+func (d *DriveInfo) HasConnectionIssues() bool {
+	return d.CRCErrors > 0
 }
 
 // GetAttributeCount returns the number of attributes

@@ -491,7 +491,8 @@ func TestSmartAttributeIsCritical(t *testing.T) {
 		{"reallocated sectors", AttrReallocatedSectors, true},
 		{"pending sectors", AttrPendingSectors, true},
 		{"offline uncorrectable", AttrOfflineUncorrectable, true},
-		{"udma crc error", AttrUDMACRCError, true},
+		{"command timeout", AttrCommandTimeout, false},
+		{"udma crc error", AttrUDMACRCError, false},
 		{"power on hours", AttrPowerOnHours, false},
 		{"temperature", AttrTemperature, false},
 	}
@@ -540,7 +541,7 @@ func TestDriveInfoHasCriticalIssues(t *testing.T) {
 		{"reallocated", DriveInfo{ReallocatedSectors: 1}, true},
 		{"pending", DriveInfo{PendingSectors: 1}, true},
 		{"uncorrectable", DriveInfo{UncorrectableSectors: 1}, true},
-		{"crc errors", DriveInfo{CRCErrors: 1}, true},
+		{"crc errors only", DriveInfo{CRCErrors: 1}, false},
 		{"multiple issues", DriveInfo{ReallocatedSectors: 5, CRCErrors: 3}, true},
 	}
 

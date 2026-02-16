@@ -408,7 +408,7 @@ func updateHealthStatus(drive *DriveInfo) {
 			return
 		}
 		if drive.ReallocatedSectors > 0 || drive.PendingSectors > 0 ||
-			drive.UncorrectableSectors > 0 || drive.CRCErrors > 0 {
+			drive.UncorrectableSectors > 0 {
 			drive.HealthStatus = HealthCaution
 			return
 		}

@@ -116,14 +116,44 @@ func TestSmartAttributeGetStatusEdgeCases(t *testing.T) {
 			expected: HealthBad,
 		},
 		{
-			name: "UDMA CRC error",
+			name: "UDMA CRC error (connection issue, shows INFO)",
 			attr: SmartAttribute{
 				ID:        AttrUDMACRCError,
 				RawValue:  5,
 				Value:     200,
 				Threshold: 0,
 			},
-			expected: HealthCaution,
+			expected: HealthInfo,
+		},
+		{
+			name: "UDMA CRC error zero value is GOOD",
+			attr: SmartAttribute{
+				ID:        AttrUDMACRCError,
+				RawValue:  0,
+				Value:     200,
+				Threshold: 0,
+			},
+			expected: HealthGood,
+		},
+		{
+			name: "Command timeout (connection issue, shows INFO)",
+			attr: SmartAttribute{
+				ID:        AttrCommandTimeout,
+				RawValue:  3,
+				Value:     100,
+				Threshold: 0,
+			},
+			expected: HealthInfo,
+		},
+		{
+			name: "Command timeout zero value is GOOD",
+			attr: SmartAttribute{
+				ID:        AttrCommandTimeout,
+				RawValue:  0,
+				Value:     100,
+				Threshold: 0,
+			},
+			expected: HealthGood,
 		},
 	}
 
@@ -141,16 +171,23 @@ func TestSmartAttributeIsCriticalAllCriticalIDs(t *testing.T) {
 	criticalIDs := []int{
 		AttrReallocatedSectors,
 		AttrReportedUncorrect,
-		AttrCommandTimeout,
 		AttrPendingSectors,
 		AttrOfflineUncorrectable,
-		AttrUDMACRCError,
 	}
 
 	for _, id := range criticalIDs {
 		attr := SmartAttribute{ID: id}
 		if !attr.IsCritical() {
 			t.Errorf("Attribute ID %d should be critical", id)
+		}
+	}
+
+	// Connection issue attributes are NOT critical
+	connectionIDs := []int{AttrUDMACRCError, AttrCommandTimeout}
+	for _, id := range connectionIDs {
+		attr := SmartAttribute{ID: id}
+		if attr.IsCritical() {
+			t.Errorf("Attribute ID %d should NOT be critical (it's a connection issue)", id)
 		}
 	}
 }
@@ -164,8 +201,10 @@ func TestSmartAttributeIsCriticalNonCriticalIDs(t *testing.T) {
 		AttrPowerOnHours,
 		AttrSpinRetryCount,
 		AttrPowerCycleCount,
+		AttrCommandTimeout,
 		AttrTemperature,
 		AttrLoadCycleCount,
+		AttrUDMACRCError,
 	}
 
 	for _, id := range nonCriticalIDs {
@@ -237,7 +276,7 @@ func TestDriveInfoHasCriticalIssuesAllCombinations(t *testing.T) {
 		{"only reallocated", 1, 0, 0, 0, true},
 		{"only pending", 0, 1, 0, 0, true},
 		{"only uncorrectable", 0, 0, 1, 0, true},
-		{"only crc", 0, 0, 0, 1, true},
+		{"only crc", 0, 0, 0, 1, false},
 		{"all issues", 5, 3, 2, 1, true},
 		{"high values", 1000, 500, 250, 100, true},
 	}
