@@ -96,6 +96,44 @@ func TestAttributeIDConstants(t *testing.T) {
 	}
 }
 
+func TestAttributeDescriptionsMap(t *testing.T) {
+	// All defined attribute constants should have descriptions
+	knownAttrs := []int{
+		AttrRawReadErrorRate,
+		AttrSpinUpTime,
+		AttrStartStopCount,
+		AttrReallocatedSectors,
+		AttrSeekErrorRate,
+		AttrPowerOnHours,
+		AttrSpinRetryCount,
+		AttrPowerCycleCount,
+		AttrReportedUncorrect,
+		AttrCommandTimeout,
+		AttrTemperature,
+		AttrPendingSectors,
+		AttrOfflineUncorrectable,
+		AttrUDMACRCError,
+		AttrWearLevelingCount,
+	}
+
+	for _, id := range knownAttrs {
+		desc, ok := AttributeDescriptions[id]
+		if !ok {
+			t.Errorf("Attribute ID %d missing from AttributeDescriptions", id)
+		}
+		if desc == "" {
+			t.Errorf("Attribute ID %d has empty description", id)
+		}
+	}
+
+	// All descriptions should be non-empty
+	for id, desc := range AttributeDescriptions {
+		if desc == "" {
+			t.Errorf("AttributeDescriptions[%d] is empty", id)
+		}
+	}
+}
+
 func TestAttributeIDValues(t *testing.T) {
 	// Verify specific ID values match SMART specification
 	if AttrRawReadErrorRate != 1 {

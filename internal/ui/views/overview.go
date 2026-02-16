@@ -112,6 +112,14 @@ func renderAttributesTable(drive smart.DriveInfo, selectedAttr, scrollOffset, wi
 		content.WriteString("\n")
 	}
 
+	// Description bar for selected attribute
+	if selectedAttr >= 0 && selectedAttr < len(attrs) {
+		if desc, ok := smart.AttributeDescriptions[attrs[selectedAttr].ID]; ok {
+			content.WriteString("\n")
+			content.WriteString(s.Italic.Foreground(s.TextDim).Render(fmt.Sprintf(" %s %s", styles.IconInfo, desc)))
+		}
+	}
+
 	// Scroll indicator
 	if len(attrs) > maxVisible {
 		scrollInfo := fmt.Sprintf("\n  ↑↓ Scroll [%d-%d / %d]", visibleStart+1, visibleEnd, len(attrs))
@@ -159,6 +167,15 @@ func renderNVMeAttributesCompact(drive smart.DriveInfo, selectedAttr int, s *sty
 
 		content.WriteString(rowStyle.Render(row))
 		content.WriteString("\n")
+	}
+
+	// Description bar for selected attribute
+	if selectedAttr >= 0 && selectedAttr < len(drive.NVMeAttributes) {
+		desc := drive.NVMeAttributes[selectedAttr].Description
+		if desc != "" {
+			content.WriteString("\n")
+			content.WriteString(s.Italic.Foreground(s.TextDim).Render(fmt.Sprintf(" %s %s", styles.IconInfo, desc)))
+		}
 	}
 
 	return content.String()

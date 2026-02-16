@@ -77,6 +77,14 @@ func renderSATAAttributes(drive smart.DriveInfo, selectedAttr, scrollOffset, wid
 		content.WriteString("\n")
 	}
 
+	// Description bar for selected attribute
+	if selectedAttr >= 0 && selectedAttr < len(attrs) {
+		if desc, ok := smart.AttributeDescriptions[attrs[selectedAttr].ID]; ok {
+			content.WriteString("\n")
+			content.WriteString(s.Italic.Foreground(s.TextDim).Render(fmt.Sprintf("%s %s", styles.IconInfo, desc)))
+		}
+	}
+
 	// Legend
 	content.WriteString("\n")
 	content.WriteString(s.Italic.Foreground(s.TextDim).Render("Value: Current (100=optimal) • Thresh: Failure threshold • Raw: Actual count"))
@@ -118,6 +126,15 @@ func renderNVMeAttributes(drive smart.DriveInfo, selectedAttr, width int, s *sty
 
 		content.WriteString(rowStyle.Render(row))
 		content.WriteString("\n")
+	}
+
+	// Description bar for selected attribute
+	if selectedAttr >= 0 && selectedAttr < len(drive.NVMeAttributes) {
+		desc := drive.NVMeAttributes[selectedAttr].Description
+		if desc != "" {
+			content.WriteString("\n")
+			content.WriteString(s.Italic.Foreground(s.TextDim).Render(fmt.Sprintf("%s %s", styles.IconInfo, desc)))
+		}
 	}
 
 	return components.RenderBox(content.String(), width-4, "NVMe Health Attributes", s)
