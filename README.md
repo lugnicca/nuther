@@ -85,6 +85,43 @@ nuther.exe
 ./nuther
 ```
 
+### S.M.A.R.T. snapshot watcher
+
+Run the lightweight watcher to archive S.M.A.R.T. reports when drives appear and, optionally, on a fixed schedule:
+
+```bash
+# Watch for newly connected drives and expose local event/snapshot HTTP routes
+sudo ./nuther watch-smart
+
+# Take one manual snapshot of currently detected drives and exit
+sudo ./nuther watch-smart --once
+
+# Poll every minute and snapshot every hour
+sudo ./nuther watch-smart --interval 1m --snapshot-interval 1h
+
+# Send each snapshot event to n8n
+sudo ./nuther watch-smart --webhook-url https://n8n.example/webhook/smart
+```
+
+Flags:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--interval` | `30s` | Device detection polling interval |
+| `--snapshot-interval` | `0` | Periodic snapshot interval; disabled when `0` |
+| `--store` | `~/.config/nuther/smart-snapshots` | JSON snapshot archive directory |
+| `--listen` | `127.0.0.1:0` | Local HTTP address for event and snapshot routes |
+| `--webhook-url` | empty | Optional outbound webhook URL for snapshot events |
+| `--once` | `false` | Take one manual snapshot and exit |
+
+On startup, the watcher prints:
+
+- `Event subscription URL`: `GET /events` streams compact JSON events as server-sent events.
+- `Snapshot index URL`: `GET /snapshots` lists stored devices and snapshots.
+- `GET /snapshots/{id}` returns a specific archived S.M.A.R.T. snapshot.
+
+Snapshots are stored as browsable JSON files under `snapshots/` with an `index.json` alongside them.
+
 ## Keyboard Shortcuts
 
 | Key | Action |
