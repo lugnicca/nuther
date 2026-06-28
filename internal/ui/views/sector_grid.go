@@ -18,18 +18,6 @@ const (
 	sectorGridMinSide         = 6
 )
 
-type sectorGridSummary struct {
-	Good          int
-	Info          int
-	Caution       int
-	Bad           int
-	BadSectors    int64
-	Pending       int64
-	Reallocated   int64
-	Uncorrectable int64
-	CRC           int64
-}
-
 type sectorCellStatus int
 
 const (
@@ -326,29 +314,6 @@ func sectorRiskScore(drive smart.DriveInfo) int {
 		return 0
 	}
 	return score
-}
-
-func summarizeSectorGrid(drives []smart.DriveInfo) sectorGridSummary {
-	var summary sectorGridSummary
-	for _, drive := range drives {
-		switch sectorGridStatus(drive) {
-		case smart.HealthGood:
-			summary.Good++
-		case smart.HealthInfo:
-			summary.Info++
-		case smart.HealthCaution:
-			summary.Caution++
-		case smart.HealthBad:
-			summary.Bad++
-		}
-
-		summary.Pending += drive.PendingSectors
-		summary.Reallocated += drive.ReallocatedSectors
-		summary.Uncorrectable += drive.UncorrectableSectors
-		summary.CRC += drive.CRCErrors
-	}
-	summary.BadSectors = summary.Pending + summary.Reallocated + summary.Uncorrectable
-	return summary
 }
 
 func sectorGridStatus(drive smart.DriveInfo) smart.HealthStatus {
