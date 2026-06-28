@@ -104,8 +104,10 @@ nuther.exe
 | Tab | Description |
 |-----|-------------|
 | Overview | Drive info, health status, temperature gauge |
-| All Drives | Summary of all detected drives |
+| S.M.A.R.T. Attributes | Detailed S.M.A.R.T. attribute table |
 | Details | Detailed S.M.A.R.T. attributes |
+| All Drives | Summary of all detected drives |
+| Sector Grid | Square cell grid for the selected disk sector pressure |
 | Settings | Theme and configuration |
 
 ## Health Status

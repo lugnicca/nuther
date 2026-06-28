@@ -242,6 +242,132 @@ func TestRenderAllDrivesSelected(t *testing.T) {
 	}
 }
 
+func TestRenderSectorGrid(t *testing.T) {
+	s := newTestStyles()
+	drives := []smart.DriveInfo{
+		createTestNVMeDrive(),
+		{
+			Device:             "/dev/sdd",
+			Model:              "Pending Sector Drive",
+			HealthStatus:       smart.HealthGood,
+			PendingSectors:     2,
+			ReallocatedSectors: 1,
+		},
+		{
+			Device:               "/dev/sde",
+			Model:                "Failed Sector Drive",
+			HealthStatus:         smart.HealthBad,
+			UncorrectableSectors: 130,
+		},
+	}
+
+	result := RenderSectorGrid(drives, 2, 120, 50, s)
+
+	if result == "" {
+		t.Error("Sector grid should not be empty")
+	}
+
+	expectedText := []string{
+		"Sector Grid",
+		"Disk 3/3",
+		"Failed Sector Drive",
+		"Reallocated",
+		"Pending",
+		"Uncorrectable",
+		"CRC/link",
+		"virtual surface map",
+		"n/p switch disk",
+	}
+	for _, text := range expectedText {
+		if !strings.Contains(result, text) {
+			t.Errorf("Sector grid should contain %q", text)
+		}
+	}
+
+	if strings.Contains(result, "Samsung 970 EVO Plus") || strings.Contains(result, "Pending Sector Drive /dev/sdd") {
+		t.Error("Sector grid should render only the selected disk, not an overview of every disk")
+	}
+}
+
+func TestRenderSectorGridEmpty(t *testing.T) {
+	s := newTestStyles()
+
+	result := RenderSectorGrid(nil, 0, 120, 50, s)
+	if result == "" {
+		t.Error("Sector grid for empty list should show a message")
+	}
+	if !strings.Contains(result, "No drives detected") {
+		t.Error("Sector grid empty state should mention no drives")
+	}
+}
+
+func TestRenderSectorGridNarrow(t *testing.T) {
+	s := newTestStyles()
+	drives := []smart.DriveInfo{
+		{
+			Device:         "/dev/sda",
+			Model:          "Very Long Model Name That Must Fit",
+			HealthStatus:   smart.HealthGood,
+			PendingSectors: 1,
+		},
+	}
+
+	result := RenderSectorGrid(drives, 0, 42, 24, s)
+	if result == "" {
+		t.Error("Narrow sector grid should not be empty")
+	}
+	if !strings.Contains(result, "Sector Grid") {
+		t.Error("Narrow sector grid should contain title")
+	}
+	for _, metric := range []string{"Reallocated", "Pending", "Uncorrectable", "CRC/link"} {
+		if !strings.Contains(result, metric) {
+			t.Errorf("Narrow sector grid should contain metric %q", metric)
+		}
+	}
+}
+
+func TestSectorGridStatus(t *testing.T) {
+	tests := []struct {
+		name  string
+		drive smart.DriveInfo
+		want  smart.HealthStatus
+	}{
+		{
+			name:  "good without sector issues",
+			drive: smart.DriveInfo{HealthStatus: smart.HealthGood},
+			want:  smart.HealthGood,
+		},
+		{
+			name:  "info for CRC only",
+			drive: smart.DriveInfo{HealthStatus: smart.HealthGood, CRCErrors: 3},
+			want:  smart.HealthInfo,
+		},
+		{
+			name:  "caution for non-zero sector metrics",
+			drive: smart.DriveInfo{HealthStatus: smart.HealthGood, PendingSectors: 1},
+			want:  smart.HealthCaution,
+		},
+		{
+			name:  "bad for severe pending sectors",
+			drive: smart.DriveInfo{HealthStatus: smart.HealthGood, PendingSectors: 11},
+			want:  smart.HealthBad,
+		},
+		{
+			name:  "bad for failed health",
+			drive: smart.DriveInfo{HealthStatus: smart.HealthBad},
+			want:  smart.HealthBad,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := sectorGridStatus(tt.drive); got != tt.want {
+				t.Errorf("sectorGridStatus() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRenderSettings(t *testing.T) {
 	s := newTestStyles()
 	cfg := config.DefaultConfig()

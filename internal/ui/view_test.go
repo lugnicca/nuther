@@ -93,7 +93,7 @@ func TestViewDifferentTabs(t *testing.T) {
 		},
 	}
 
-	tabs := []int{TabOverview, TabAttributes, TabDetails, TabAllDrives, TabSettings}
+	tabs := []int{TabOverview, TabAttributes, TabDetails, TabAllDrives, TabSectorGrid, TabSettings}
 	for _, tab := range tabs {
 		m.ActiveTab = tab
 		result := m.View()
@@ -207,5 +207,34 @@ func TestViewAllDrivesTab(t *testing.T) {
 
 	if result == "" {
 		t.Error("View on all drives tab should not be empty")
+	}
+}
+
+func TestViewSectorGridTab(t *testing.T) {
+	cfg := config.DefaultConfig()
+	m := NewModel(cfg)
+	m.Ready = true
+	m.Width = 120
+	m.Height = 50
+	m.Drives = []smart.DriveInfo{
+		{Model: "Drive 1", HealthStatus: smart.HealthGood},
+		{Model: "Drive 2", HealthStatus: smart.HealthGood, PendingSectors: 1},
+	}
+	m.ActiveTab = TabSectorGrid
+	m.SelectedDrive = 1
+
+	result := m.View()
+
+	if result == "" {
+		t.Error("View on sector grid tab should not be empty")
+	}
+	if !strings.Contains(result, "Sector Grid") {
+		t.Error("View on sector grid tab should contain title")
+	}
+	if !strings.Contains(result, "Disk 2/2") {
+		t.Error("View on sector grid tab should show selected disk index")
+	}
+	if !strings.Contains(result, "Drive 2") || strings.Contains(result, "Drive 1 /dev") {
+		t.Error("View on sector grid tab should focus the selected disk")
 	}
 }

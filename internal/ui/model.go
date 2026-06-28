@@ -18,8 +18,9 @@ const (
 	TabAttributes = 1
 	TabDetails    = 2
 	TabAllDrives  = 3
-	TabSettings   = 4
-	TabCount      = 5
+	TabSectorGrid = 4
+	TabSettings   = 5
+	TabCount      = 6
 )
 
 // UIChrome is the vertical space consumed by header + tabs + drive selector + status bar + margins
@@ -31,6 +32,7 @@ var TabNames = []string{
 	"S.M.A.R.T. Attributes",
 	"Details",
 	"All Drives",
+	"Sector Grid",
 	"Settings",
 }
 
@@ -41,7 +43,6 @@ const (
 	SettingsTempUnit
 	SettingsCount
 )
-
 
 // Model is the main Bubble Tea model
 type Model struct {

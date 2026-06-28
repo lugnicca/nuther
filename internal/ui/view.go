@@ -51,6 +51,8 @@ func (m Model) View() string {
 	switch m.ActiveTab {
 	case TabAllDrives:
 		sections = append(sections, views.RenderAllDrives(m.Drives, m.SelectedDrive, m.Width, m.Height, m.Styles))
+	case TabSectorGrid:
+		sections = append(sections, views.RenderSectorGrid(m.Drives, m.SelectedDrive, m.Width, m.Height, m.Styles))
 	case TabSettings:
 		sections = append(sections, views.RenderSettings(m.Config, m.SettingsSelected, m.SettingsMessage, m.Width, m.Styles))
 	default:
