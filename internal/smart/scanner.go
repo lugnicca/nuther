@@ -38,6 +38,35 @@ func ScanDrives() ([]DriveInfo, error) {
 	return CreateDemoData(), fmt.Errorf("no drives detected, using demo data")
 }
 
+func dedupeDrives(drives []DriveInfo) []DriveInfo {
+	if len(drives) < 2 {
+		return drives
+	}
+
+	seen := make(map[string]struct{}, len(drives))
+	unique := make([]DriveInfo, 0, len(drives))
+	for _, drive := range drives {
+		key := driveIdentityKey(drive)
+		if _, ok := seen[key]; ok {
+			slog.Debug("duplicate drive ignored", "device", drive.Device, "model", drive.Model, "serial", drive.Serial)
+			continue
+		}
+		seen[key] = struct{}{}
+		unique = append(unique, drive)
+	}
+	return unique
+}
+
+func driveIdentityKey(drive DriveInfo) string {
+	if serial := strings.TrimSpace(strings.ToLower(drive.Serial)); serial != "" {
+		return "serial:" + serial
+	}
+	if wwn := strings.TrimSpace(strings.ToLower(drive.WWN)); wwn != "" {
+		return "wwn:" + wwn
+	}
+	return "device:" + strings.TrimSpace(strings.ToLower(drive.Device))
+}
+
 // scanWithSmartctl uses smartctl --scan to discover drives
 func scanWithSmartctl() []DriveInfo {
 	output, err := runSmartctl("--scan", "-j")
@@ -58,6 +87,7 @@ func scanWithSmartctl() []DriveInfo {
 				}
 			}
 			if len(drives) > 0 {
+				drives = dedupeDrives(drives)
 				slog.Info("scan complete", "drives", len(drives))
 				return drives
 			}
@@ -96,7 +126,7 @@ func scanWithSmartctl() []DriveInfo {
 		}
 	}
 
-	return drives
+	return dedupeDrives(drives)
 }
 
 // scanCommonDevices checks common device paths for drives
@@ -113,6 +143,7 @@ func scanCommonDevices() []DriveInfo {
 		}
 	}
 
+	drives = dedupeDrives(drives)
 	if len(drives) > 0 {
 		slog.Info("scan complete", "drives", len(drives))
 	}
@@ -163,20 +194,20 @@ func GetDriveInfoWithType(device string, deviceType string) (DriveInfo, error) {
 // parseDriveInfo converts smartctl JSON output to a DriveInfo struct
 func parseDriveInfo(device string, s SmartctlOutput) DriveInfo {
 	drive := DriveInfo{
-		Device:         device,
-		Model:          s.ModelName,
-		ModelFamily:    s.ModelFamily,
-		Serial:         s.SerialNumber,
-		Firmware:       s.FirmwareVersion,
-		CapacityBytes:  s.UserCapacity.Bytes,
-		Capacity:       FormatBytes(s.UserCapacity.Bytes),
-		LogicalSector:  s.LogicalBlockSize,
-		PhysicalSector: s.PhysicalBlockSize,
-		FormFactor:     s.FormFactor.Name,
-		RotationRate:   s.RotationRate,
-		Temperature:    s.Temperature.Current,
-		PowerOnHours:   s.PowerOnTime.Hours,
-		PowerCycles:    s.PowerCycleCount,
+		Device:            device,
+		Model:             s.ModelName,
+		ModelFamily:       s.ModelFamily,
+		Serial:            s.SerialNumber,
+		Firmware:          s.FirmwareVersion,
+		CapacityBytes:     s.UserCapacity.Bytes,
+		Capacity:          FormatBytes(s.UserCapacity.Bytes),
+		LogicalSector:     s.LogicalBlockSize,
+		PhysicalSector:    s.PhysicalBlockSize,
+		FormFactor:        s.FormFactor.Name,
+		RotationRate:      s.RotationRate,
+		Temperature:       s.Temperature.Current,
+		PowerOnHours:      s.PowerOnTime.Hours,
+		PowerCycles:       s.PowerCycleCount,
 		SmartSupported:    true,
 		SmartEnabled:      true,
 		HealthPassed:      s.SmartStatus.Passed,

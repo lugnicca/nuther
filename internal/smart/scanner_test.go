@@ -711,6 +711,38 @@ func TestScanWithSmartctl_JSONScan(t *testing.T) {
 	}
 }
 
+func TestScanWithSmartctl_DeduplicatesSamePhysicalDrive(t *testing.T) {
+	nvmeJSON := loadTestDataRaw(t, "smartctl_nvme.json")
+	scanJSON, _ := json.Marshal(SmartctlScanResult{
+		Devices: []struct {
+			Name     string `json:"name"`
+			InfoName string `json:"info_name"`
+			Type     string `json:"type"`
+			Protocol string `json:"protocol"`
+		}{
+			{Name: `\\.\PhysicalDrive0`, InfoName: `\\.\PhysicalDrive0`, Type: "nvme", Protocol: "NVMe"},
+			{Name: `\\.\PhysicalDrive0`, InfoName: `\\.\PhysicalDrive0`, Type: "auto", Protocol: "ATA"},
+		},
+	})
+
+	withMockedSmartctl(t, func(args ...string) ([]byte, error) {
+		for _, a := range args {
+			if a == "--scan" {
+				return scanJSON, nil
+			}
+		}
+		return nvmeJSON, nil
+	})
+
+	drives := scanWithSmartctl()
+	if len(drives) != 1 {
+		t.Fatalf("scanWithSmartctl() returned %d drives, want 1 after deduplication", len(drives))
+	}
+	if drives[0].Serial != "S5GXNF0R123456" {
+		t.Errorf("Serial = %q, want deduplicated real drive", drives[0].Serial)
+	}
+}
+
 func TestScanWithSmartctl_TextFallback(t *testing.T) {
 	sataJSON := loadTestDataRaw(t, "smartctl_sata_ssd.json")
 	withMockedSmartctl(t, func(args ...string) ([]byte, error) {
