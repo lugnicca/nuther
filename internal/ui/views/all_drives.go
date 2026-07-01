@@ -90,4 +90,3 @@ func RenderAllDrives(drives []smart.DriveInfo, selectedDrive, width, height int,
 
 	return components.RenderBox(content.String(), width-4, "All Drives Overview", s)
 }
-

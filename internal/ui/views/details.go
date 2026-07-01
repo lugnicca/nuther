@@ -56,7 +56,7 @@ func RenderDetails(drive smart.DriveInfo, width int, s *styles.Styles) string {
 	// Critical attributes section for SATA drives
 	if !drive.IsNVMe && len(drive.Attributes) > 0 {
 		content.WriteString("\n")
-		content.WriteString(lipgloss.NewStyle().Bold(true).Foreground(s.Warning).Render(" "+styles.IconWarning+" Critical Attributes\n\n"))
+		content.WriteString(lipgloss.NewStyle().Bold(true).Foreground(s.Warning).Render(" " + styles.IconWarning + " Critical Attributes\n\n"))
 
 		criticalIDs := []int{
 			smart.AttrReallocatedSectors,

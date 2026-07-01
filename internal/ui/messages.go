@@ -2,6 +2,7 @@ package ui
 
 import (
 	"nuther/internal/smart"
+	"nuther/internal/smartwatch"
 	"time"
 )
 
@@ -16,6 +17,18 @@ type DriveRefreshedMsg struct {
 	Index int
 	Drive smart.DriveInfo
 	Error error
+}
+
+// SnapshotsLoadedMsg is sent when archived SMART snapshots are loaded.
+type SnapshotsLoadedMsg struct {
+	Index smartwatch.Index
+	Error error
+}
+
+// SnapshotOpenedMsg is sent when a selected archived snapshot is loaded for inspection.
+type SnapshotOpenedMsg struct {
+	Snapshot smartwatch.Snapshot
+	Error    error
 }
 
 // ScreenshotMsg is sent when screenshot is complete

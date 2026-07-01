@@ -3,9 +3,11 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"nuther/internal/config"
 	"nuther/internal/smart"
+	"nuther/internal/smartwatch"
 )
 
 func TestViewNotReady(t *testing.T) {
@@ -93,7 +95,7 @@ func TestViewDifferentTabs(t *testing.T) {
 		},
 	}
 
-	tabs := []int{TabOverview, TabAttributes, TabDetails, TabAllDrives, TabSectorGrid, TabSettings}
+	tabs := []int{TabOverview, TabAttributes, TabDetails, TabAllDrives, TabSectorGrid, TabSnapshots, TabSettings}
 	for _, tab := range tabs {
 		m.ActiveTab = tab
 		result := m.View()
@@ -236,5 +238,52 @@ func TestViewSectorGridTab(t *testing.T) {
 	}
 	if !strings.Contains(result, "Drive 2") || strings.Contains(result, "Drive 1 /dev") {
 		t.Error("View on sector grid tab should focus the selected disk")
+	}
+}
+
+func TestViewSnapshotsTabShowsKnownDisksAndHistory(t *testing.T) {
+	cfg := config.DefaultConfig()
+	m := NewModel(cfg)
+	m.Ready = true
+	m.Width = 140
+	m.Height = 50
+	m.Drives = []smart.DriveInfo{{Model: "Live Drive", HealthStatus: smart.HealthGood}}
+	m.ActiveTab = TabSnapshots
+	m.SelectedSnapshot = 1
+
+	first := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
+	second := first.Add(2 * time.Hour)
+	m.SnapshotIndex = smartwatch.Index{
+		Version:   1,
+		UpdatedAt: second,
+		Devices: map[string]smartwatch.DeviceRecord{
+			"serial-sn123": {
+				Key:          "serial-sn123",
+				FirstSeen:    first,
+				LastSeen:     second,
+				SnapshotIDs:  []string{"snap-1", "snap-2"},
+				LastSnapshot: "snap-2",
+				Summary: smartwatch.DeviceSummary{
+					Key:          "serial-sn123",
+					Device:       "/dev/sda",
+					Serial:       "SN123",
+					Model:        "Archive Drive",
+					Capacity:     "1 TB",
+					HealthStatus: smart.HealthCaution,
+				},
+			},
+		},
+		Snapshots: []smartwatch.SnapshotRecord{
+			{ID: "snap-1", Timestamp: first, Reason: smartwatch.ReasonStartup, Path: "snapshots/snap-1.json", Device: smartwatch.DeviceSummary{Model: "Archive Drive", HealthStatus: smart.HealthGood}},
+			{ID: "snap-2", Timestamp: second, Reason: smartwatch.ReasonManual, Path: "snapshots/snap-2.json", Device: smartwatch.DeviceSummary{Model: "Archive Drive", HealthStatus: smart.HealthCaution}},
+		},
+	}
+
+	result := m.View()
+
+	for _, want := range []string{"Snapshots", "Known disks", "Snapshot history", "Archive Drive", "snap-2", "GET /snapshots/snap-1", "Enter: open overview"} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("snapshots tab missing %q in view:\n%s", want, result)
+		}
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"nuther/internal/smart"
+
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -34,6 +36,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.SelectedDrive >= len(m.Drives) {
 				m.SelectedDrive = 0
 			}
+		}
+		return m, nil
+
+	case SnapshotsLoadedMsg:
+		m.SnapshotError = msg.Error
+		if msg.Error == nil {
+			m.SnapshotIndex = msg.Index
+			if m.SelectedSnapshot >= len(m.SnapshotIndex.Snapshots) {
+				m.SelectedSnapshot = 0
+			}
+		}
+		return m, nil
+
+	case SnapshotOpenedMsg:
+		m.SnapshotError = msg.Error
+		if msg.Error == nil {
+			m.Drives = []smart.DriveInfo{msg.Snapshot.SMART}
+			m.SelectedDrive = 0
+			m.SelectedAttr = 0
+			m.ScrollOffset = 0
+			m.ActiveTab = TabOverview
+			m.ViewingSnapshot = true
+			m.LastRefresh = msg.Snapshot.Timestamp
 		}
 		return m, nil
 
@@ -89,10 +114,12 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case key.Matches(msg, m.KeyMap.Tab):
+		m.ViewingSnapshot = false
 		m.NextTab()
 		return m, nil
 
 	case key.Matches(msg, m.KeyMap.ShiftTab):
+		m.ViewingSnapshot = false
 		m.PrevTab()
 		return m, nil
 
@@ -126,14 +153,16 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.KeyMap.ForceRefresh):
 		m.Loading = true
-		return m, LoadDrivesCmd()
+		m.ViewingSnapshot = false
+		return m, tea.Batch(LoadDrivesCmd(), LoadSnapshotsCmd(m.SnapshotStore))
 
 	case key.Matches(msg, m.KeyMap.Refresh):
 		if m.isCacheFresh() {
 			return m, nil
 		}
 		m.Loading = true
-		return m, LoadDrivesCmd()
+		m.ViewingSnapshot = false
+		return m, tea.Batch(LoadDrivesCmd(), LoadSnapshotsCmd(m.SnapshotStore))
 
 	case key.Matches(msg, m.KeyMap.Help):
 		m.ShowHelp = !m.ShowHelp
@@ -159,6 +188,9 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.KeyMap.Enter):
 		if m.ActiveTab == TabSettings {
 			return m, m.SettingsApply()
+		}
+		if m.ActiveTab == TabSnapshots {
+			return m, OpenSelectedSnapshotCmd(m.SnapshotStore, m.SnapshotIndex, m.SelectedSnapshot)
 		}
 		return m, nil
 	}

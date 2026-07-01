@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"time"
 
 	"nuther/internal/config"
 	"nuther/internal/smart"
+	"nuther/internal/smartwatch"
 	"nuther/internal/ui/styles"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -19,8 +22,9 @@ const (
 	TabDetails    = 2
 	TabAllDrives  = 3
 	TabSectorGrid = 4
-	TabSettings   = 5
-	TabCount      = 6
+	TabSnapshots  = 5
+	TabSettings   = 6
+	TabCount      = 7
 )
 
 // UIChrome is the vertical space consumed by header + tabs + drive selector + status bar + margins
@@ -33,6 +37,7 @@ var TabNames = []string{
 	"Details",
 	"All Drives",
 	"Sector Grid",
+	"Snapshots",
 	"Settings",
 }
 
@@ -51,21 +56,26 @@ type Model struct {
 	SelectedDrive int
 
 	// UI state
-	ActiveTab    int
-	SelectedAttr int
-	ScrollOffset int
-	ShowHelp     bool
+	ActiveTab        int
+	SelectedAttr     int
+	SelectedSnapshot int
+	ScrollOffset     int
+	ShowHelp         bool
 
 	// Terminal dimensions
 	Width  int
 	Height int
 
 	// Runtime state
-	Ready         bool
-	Loading       bool
-	LastRefresh   time.Time
-	CacheDuration time.Duration
-	Error         error
+	Ready           bool
+	Loading         bool
+	LastRefresh     time.Time
+	CacheDuration   time.Duration
+	Error           error
+	SnapshotIndex   smartwatch.Index
+	SnapshotError   error
+	SnapshotStore   string
+	ViewingSnapshot bool
 
 	// Screenshot state
 	ScreenshotStatus  string // "", "capturing", "success", "error"
@@ -99,12 +109,15 @@ func NewModel(cfg *config.Config) Model {
 		SelectedDrive:    0,
 		ActiveTab:        TabOverview,
 		SelectedAttr:     0,
+		SelectedSnapshot: 0,
 		ScrollOffset:     0,
 		ShowHelp:         false,
 		Ready:            false,
 		Loading:          true,
 		LastRefresh:      time.Now(),
 		CacheDuration:    60 * time.Second,
+		SnapshotStore:    defaultSnapshotStore(),
+		ViewingSnapshot:  false,
 		ScreenshotStatus: "",
 		Spinner:          s,
 		Help:             help.New(),
@@ -120,7 +133,20 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.Spinner.Tick,
 		LoadDrivesCmd(),
+		LoadSnapshotsCmd(m.SnapshotStore),
 	)
+}
+
+func defaultSnapshotStore() string {
+	configDir, err := os.UserConfigDir()
+	if err != nil || configDir == "" {
+		home, homeErr := os.UserHomeDir()
+		if homeErr != nil || home == "" {
+			return filepath.Join(".", "smart-snapshots")
+		}
+		configDir = filepath.Join(home, ".config")
+	}
+	return filepath.Join(configDir, "nuther", "smart-snapshots")
 }
 
 // isCacheFresh returns true if cached drive data is still valid
@@ -172,6 +198,13 @@ func (m *Model) ResetAttributeSelection() {
 
 // ScrollUp moves the selection up in the attribute list
 func (m *Model) ScrollUp() {
+	if m.ActiveTab == TabSnapshots {
+		if m.SelectedSnapshot > 0 {
+			m.SelectedSnapshot--
+		}
+		return
+	}
+
 	if m.SelectedAttr > 0 {
 		m.SelectedAttr--
 		if m.SelectedAttr < m.ScrollOffset {
@@ -182,6 +215,13 @@ func (m *Model) ScrollUp() {
 
 // ScrollDown moves the selection down in the attribute list
 func (m *Model) ScrollDown() {
+	if m.ActiveTab == TabSnapshots {
+		if m.SelectedSnapshot < len(m.SnapshotIndex.Snapshots)-1 {
+			m.SelectedSnapshot++
+		}
+		return
+	}
+
 	drive := m.GetCurrentDrive()
 	if drive == nil {
 		return

@@ -6,6 +6,7 @@ import (
 
 	"nuther/internal/config"
 	"nuther/internal/smart"
+	"nuther/internal/smartwatch"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -575,5 +576,60 @@ func TestHandleKeyPressEnterNotInSettings(t *testing.T) {
 
 	if cmd != nil {
 		t.Error("Enter outside settings should not return a command")
+	}
+}
+
+func TestHandleKeyPressEnterInSnapshotsOpensSelectedSnapshot(t *testing.T) {
+	store := smartwatch.NewStore(t.TempDir())
+	now := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
+	olderDrive := smart.DriveInfo{Device: "/dev/sda", Model: "Older Archive", Serial: "OLD123", HealthStatus: smart.HealthGood}
+	newerDrive := smart.DriveInfo{Device: "/dev/sdb", Model: "Selected Archive", Serial: "NEW123", HealthStatus: smart.HealthCaution}
+	olderRecord, err := store.SaveSnapshot(now, smartwatch.ReasonStartup, olderDrive)
+	if err != nil {
+		t.Fatalf("SaveSnapshot older: %v", err)
+	}
+	newerRecord, err := store.SaveSnapshot(now.Add(time.Hour), smartwatch.ReasonManual, newerDrive)
+	if err != nil {
+		t.Fatalf("SaveSnapshot newer: %v", err)
+	}
+	index, err := store.LoadIndex()
+	if err != nil {
+		t.Fatalf("LoadIndex: %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	m := NewModel(cfg)
+	m.ActiveTab = TabSnapshots
+	m.SnapshotStore = store.Dir()
+	m.SnapshotIndex = index
+	m.SelectedSnapshot = 0 // newest first in the UI
+
+	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	updatedModel, cmd := m.handleKeyPress(enterMsg)
+	if cmd == nil {
+		t.Fatal("Enter in snapshots should return an open snapshot command")
+	}
+	msg := cmd()
+	opened, ok := msg.(SnapshotOpenedMsg)
+	if !ok {
+		t.Fatalf("command returned %T, want SnapshotOpenedMsg", msg)
+	}
+	if opened.Error != nil {
+		t.Fatalf("open snapshot error: %v", opened.Error)
+	}
+	if opened.Snapshot.ID != newerRecord.ID || opened.Snapshot.ID == olderRecord.ID {
+		t.Fatalf("opened snapshot ID = %q, want newest selected %q", opened.Snapshot.ID, newerRecord.ID)
+	}
+
+	modelAfterOpen, _ := updatedModel.(Model).Update(opened)
+	openedModel := modelAfterOpen.(Model)
+	if openedModel.ActiveTab != TabOverview {
+		t.Fatalf("ActiveTab after opening snapshot = %d, want %d", openedModel.ActiveTab, TabOverview)
+	}
+	if !openedModel.ViewingSnapshot {
+		t.Fatal("ViewingSnapshot should be true after opening archived snapshot")
+	}
+	if len(openedModel.Drives) != 1 || openedModel.Drives[0].Model != newerDrive.Model {
+		t.Fatalf("opened drive = %+v, want %q", openedModel.Drives, newerDrive.Model)
 	}
 }

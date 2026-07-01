@@ -139,4 +139,3 @@ func renderNVMeAttributes(drive smart.DriveInfo, selectedAttr, width int, s *sty
 
 	return components.RenderBox(content.String(), width-4, "NVMe Health Attributes", s)
 }
-

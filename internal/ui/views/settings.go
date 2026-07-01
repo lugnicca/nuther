@@ -11,7 +11,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-
 // RenderSettings renders the settings tab
 func RenderSettings(cfg *config.Config, selected int, message string, width int, s *styles.Styles) string {
 	var result strings.Builder

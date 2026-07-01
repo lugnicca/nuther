@@ -38,10 +38,14 @@ func (m Model) View() string {
 		sections = append(sections, components.RenderDemoBanner(m.Width, m.Styles))
 	}
 
-	// Drive selector (not shown in settings)
-	if m.ActiveTab != TabSettings {
+	// Drive selector (not shown in settings or archived snapshot overview)
+	if m.ActiveTab != TabSettings && !m.ViewingSnapshot {
 		sections = append(sections, components.RenderDriveSelector(m.Drives, m.SelectedDrive, m.Styles))
 		sections = append(sections, "")
+	}
+
+	if m.ViewingSnapshot {
+		sections = append(sections, components.RenderBox("Archived snapshot view · press Tab to return to live tabs, r/R to reload live drives", m.Width-4, "Snapshot", m.Styles))
 	}
 
 	// Tab bar
@@ -53,6 +57,8 @@ func (m Model) View() string {
 		sections = append(sections, views.RenderAllDrives(m.Drives, m.SelectedDrive, m.Width, m.Height, m.Styles))
 	case TabSectorGrid:
 		sections = append(sections, views.RenderSectorGrid(m.Drives, m.SelectedDrive, m.Width, m.Height, m.Styles))
+	case TabSnapshots:
+		sections = append(sections, views.RenderSnapshots(m.SnapshotIndex, m.SelectedSnapshot, m.Width, m.Height, m.Styles))
 	case TabSettings:
 		sections = append(sections, views.RenderSettings(m.Config, m.SettingsSelected, m.SettingsMessage, m.Width, m.Styles))
 	default:

@@ -85,6 +85,23 @@ nuther.exe
 ./nuther
 ```
 
+### Updates
+
+Nuther can check GitHub Releases and replace the current single-file binary:
+
+```bash
+# Check whether a newer release exists
+nuther update --check
+
+# Download the matching release asset, verify checksums.txt, and update the binary
+nuther update
+
+# Non-interactive/scripted update
+nuther update --yes
+```
+
+The updater uses the published GoReleaser assets and verifies the release archive SHA-256 from `checksums.txt` before replacing the executable.
+
 ### S.M.A.R.T. snapshot watcher
 
 Run the lightweight watcher to archive S.M.A.R.T. reports when drives appear and, optionally, on a fixed schedule:
@@ -145,6 +162,7 @@ Snapshots are stored as browsable JSON files under `snapshots/` with an `index.j
 | Details | Detailed S.M.A.R.T. attributes |
 | All Drives | Summary of all detected drives |
 | Sector Grid | Square cell grid for the selected disk sector pressure |
+| Snapshots | Archived S.M.A.R.T. snapshot history and known disks |
 | Settings | Theme and configuration |
 
 ## Health Status

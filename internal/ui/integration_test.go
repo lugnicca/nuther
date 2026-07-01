@@ -43,7 +43,7 @@ func TestIntegration_DemoData_AllTabs(t *testing.T) {
 
 		// The selected drive model name should appear in the view for all tabs
 		// except Settings (which doesn't show per-drive info)
-		if tab != TabSettings && !strings.Contains(view, selectedModel) {
+		if tab != TabSettings && tab != TabSnapshots && !strings.Contains(view, selectedModel) {
 			t.Errorf("Tab %d (%s): expected to find model %q in view output", tab, TabNames[tab], selectedModel)
 		}
 	}

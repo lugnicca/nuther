@@ -47,6 +47,17 @@ func main() {
 		defer logFile.Close()
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == "update" {
+		if err := runUpdate(os.Args[2:]); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return
+			}
+			fmt.Fprintf(os.Stderr, "update: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if len(os.Args) > 1 && (os.Args[1] == "watch-smart" || os.Args[1] == "watch") {
 		if err := runSmartWatcher(os.Args[1], os.Args[2:]); err != nil {
 			if errors.Is(err, flag.ErrHelp) {

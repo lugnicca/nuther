@@ -188,6 +188,11 @@ func TestModelPrevTab(t *testing.T) {
 	}
 
 	m.PrevTab()
+	if m.ActiveTab != TabSnapshots {
+		t.Errorf("After PrevTab: ActiveTab = %d, want %d", m.ActiveTab, TabSnapshots)
+	}
+
+	m.PrevTab()
 	if m.ActiveTab != TabSectorGrid {
 		t.Errorf("After PrevTab: ActiveTab = %d, want %d", m.ActiveTab, TabSectorGrid)
 	}
@@ -357,11 +362,14 @@ func TestTabConstants(t *testing.T) {
 	if TabSectorGrid != 4 {
 		t.Errorf("TabSectorGrid = %d, want 4", TabSectorGrid)
 	}
-	if TabSettings != 5 {
-		t.Errorf("TabSettings = %d, want 5", TabSettings)
+	if TabSnapshots != 5 {
+		t.Errorf("TabSnapshots = %d, want 5", TabSnapshots)
 	}
-	if TabCount != 6 {
-		t.Errorf("TabCount = %d, want 6", TabCount)
+	if TabSettings != 6 {
+		t.Errorf("TabSettings = %d, want 6", TabSettings)
+	}
+	if TabCount != 7 {
+		t.Errorf("TabCount = %d, want 7", TabCount)
 	}
 }
 
@@ -376,6 +384,7 @@ func TestTabNames(t *testing.T) {
 		"Details",
 		"All Drives",
 		"Sector Grid",
+		"Snapshots",
 		"Settings",
 	}
 
