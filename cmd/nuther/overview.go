@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"nuther/internal/config"
+	"nuther/internal/screenshot"
 	"nuther/internal/smart"
 	"nuther/internal/ui/styles"
 	"nuther/internal/ui/views"
@@ -16,6 +17,8 @@ func runOverview(args []string) error {
 	flags := flag.NewFlagSet("overview", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	jsonPath := flags.String("json", "-", "smartctl JSON file to render ('-' for stdin)")
+	outputPath := flags.String("output", "", "write overview image to this .png/.jpg path")
+	themeName := flags.String("theme", "default", "theme to use for rendering")
 	width := flags.Int("width", 120, "render width")
 	height := flags.Int("height", 50, "render height")
 	if err := flags.Parse(args); err != nil {
@@ -41,7 +44,18 @@ func runOverview(args []string) error {
 		return err
 	}
 
-	fmt.Print(views.RenderOverview(drive, 0, 0, *width, *height, styles.NewStyles(config.DefaultConfig())))
+	cfg := config.DefaultConfig()
+	cfg.Theme = *themeName
+	cfg.Colors = config.GetTheme(*themeName).Colors
+	overview := views.RenderOverview(drive, 0, 0, *width, *height, styles.NewStyles(cfg))
+	if *outputPath != "" {
+		if err := screenshot.RenderOverviewImage(overview, *outputPath, cfg); err != nil {
+			return err
+		}
+		fmt.Println(*outputPath)
+		return nil
+	}
+	fmt.Print(overview)
 	fmt.Println()
 	return nil
 }

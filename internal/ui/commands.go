@@ -1,8 +1,11 @@
 package ui
 
 import (
+	"nuther/internal/config"
 	"nuther/internal/screenshot"
 	"nuther/internal/smart"
+	"nuther/internal/ui/styles"
+	"nuther/internal/ui/views"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -26,5 +29,16 @@ func CaptureScreenshotCmd() tea.Cmd {
 			return ScreenshotMsg{Success: false, Error: err}
 		}
 		return ScreenshotMsg{Success: true}
+	}
+}
+
+func SaveOverviewImageCmd(drive smart.DriveInfo, selectedAttr, scrollOffset, width, height int, s *styles.Styles, cfg *config.Config) tea.Cmd {
+	return func() tea.Msg {
+		path := screenshot.GetScreenshotPath()
+		overview := views.RenderOverview(drive, selectedAttr, scrollOffset, width, height, s)
+		if err := screenshot.RenderOverviewImage(overview, path, cfg); err != nil {
+			return ScreenshotMsg{Success: false, Error: err}
+		}
+		return ScreenshotMsg{Success: true, Path: path}
 	}
 }

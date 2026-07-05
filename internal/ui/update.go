@@ -65,7 +65,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ScreenshotMsg:
 		if msg.Success {
 			m.ScreenshotStatus = "success"
-			m.ScreenshotMessage = "Screenshot copied to clipboard!"
+			if msg.Path != "" {
+				m.ScreenshotMessage = fmt.Sprintf("Overview image saved: %s", msg.Path)
+			} else {
+				m.ScreenshotMessage = "Screenshot copied to clipboard!"
+			}
 		} else {
 			m.ScreenshotStatus = "error"
 			if msg.Error != nil {
@@ -170,6 +174,12 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.KeyMap.Screenshot):
 		m.ScreenshotStatus = "capturing"
+		if m.ActiveTab == TabOverview {
+			m.ScreenshotMessage = "Saving overview image..."
+			if drive := m.GetCurrentDrive(); drive != nil {
+				return m, SaveOverviewImageCmd(*drive, m.SelectedAttr, m.ScrollOffset, m.Width, m.Height, m.Styles, m.Config)
+			}
+		}
 		m.ScreenshotMessage = "Capturing..."
 		return m, CaptureScreenshotCmd()
 

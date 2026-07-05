@@ -15,6 +15,9 @@ import (
 func RenderOverview(drive smart.DriveInfo, selectedAttr, scrollOffset, width, height int, s *styles.Styles) string {
 	var result strings.Builder
 
+	result.WriteString(renderOverviewActions(s))
+	result.WriteString("\n")
+
 	// Drive header with model, capacity, firmware, serial, health
 	result.WriteString(components.RenderDriveHeader(drive, s))
 	result.WriteString("\n")
@@ -27,6 +30,15 @@ func RenderOverview(drive smart.DriveInfo, selectedAttr, scrollOffset, width, he
 	result.WriteString(renderAttributesTable(drive, selectedAttr, scrollOffset, width, height, s))
 
 	return result.String()
+}
+
+func renderOverviewActions(s *styles.Styles) string {
+	return lipgloss.NewStyle().
+		Bold(true).
+		Foreground(s.Background).
+		Background(s.AccentPrimary).
+		Padding(0, 1).
+		Render("s  Screenshot overview")
 }
 
 func renderAttributesTable(drive smart.DriveInfo, selectedAttr, scrollOffset, width, height int, s *styles.Styles) string {
