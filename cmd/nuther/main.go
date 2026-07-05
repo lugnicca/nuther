@@ -58,6 +58,17 @@ func main() {
 		return
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == "overview" {
+		if err := runOverview(os.Args[2:]); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return
+			}
+			fmt.Fprintf(os.Stderr, "overview: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if len(os.Args) > 1 && (os.Args[1] == "watch-smart" || os.Args[1] == "watch") {
 		if err := runSmartWatcher(os.Args[1], os.Args[2:]); err != nil {
 			if errors.Is(err, flag.ErrHelp) {

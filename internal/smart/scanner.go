@@ -191,6 +191,19 @@ func GetDriveInfoWithType(device string, deviceType string) (DriveInfo, error) {
 	return parseDriveInfo(device, smartOutput), nil
 }
 
+func ParseSmartctlDriveJSON(data []byte) (DriveInfo, error) {
+	var smartOutput SmartctlOutput
+	if err := json.Unmarshal(data, &smartOutput); err != nil {
+		return DriveInfo{}, fmt.Errorf("failed to parse smartctl output: %w", err)
+	}
+
+	device := smartOutput.Device.Name
+	if device == "" {
+		device = smartOutput.Device.InfoName
+	}
+	return parseDriveInfo(device, smartOutput), nil
+}
+
 // parseDriveInfo converts smartctl JSON output to a DriveInfo struct
 func parseDriveInfo(device string, s SmartctlOutput) DriveInfo {
 	drive := DriveInfo{
