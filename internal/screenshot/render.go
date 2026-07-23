@@ -15,6 +15,7 @@ import (
 	"nuther/internal/config"
 
 	"golang.org/x/image/font"
+	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 )
@@ -209,27 +210,10 @@ func encodeImage(img image.Image, outputPath string) error {
 	}
 }
 
-func loadMonoFace() (font.Face, error) {
-	return loadMonoFaceSize(15)
-}
-
 func loadMonoFaceSize(size float64) (font.Face, error) {
-	candidates := []string{
-		"/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-		"/usr/share/fonts/dejavu/DejaVuSansMono.ttf",
-		"/Library/Fonts/Menlo.ttc",
-		"C:/Windows/Fonts/consola.ttf",
+	ft, err := opentype.Parse(gomono.TTF)
+	if err != nil {
+		return nil, err
 	}
-	for _, path := range candidates {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		ft, err := opentype.Parse(data)
-		if err != nil {
-			continue
-		}
-		return opentype.NewFace(ft, &opentype.FaceOptions{Size: size, DPI: 96, Hinting: font.HintingFull})
-	}
-	return nil, os.ErrNotExist
+	return opentype.NewFace(ft, &opentype.FaceOptions{Size: size, DPI: 96, Hinting: font.HintingFull})
 }
