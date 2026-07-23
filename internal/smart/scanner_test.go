@@ -187,6 +187,34 @@ func TestParseDriveInfo_SATA_SSD(t *testing.T) {
 	}
 }
 
+func TestParseSmartctlDriveJSON_MicronTotalLBAsWrittenAttribute246(t *testing.T) {
+	data := []byte(`{
+		"device": {"name": "/dev/sdb", "protocol": "ATA"},
+		"model_name": "Micron_5300_MTFDDAK1T9TDS",
+		"rotation_rate": 0,
+		"logical_block_size": 512,
+		"smart_status": {"passed": true},
+		"ata_smart_attributes": {"table": [{
+			"id": 246,
+			"name": "Total_LBAs_Written",
+			"value": 100,
+			"worst": 100,
+			"thresh": 0,
+			"raw": {"value": 95807222632, "string": "95807222632"}
+		}]}
+	}`)
+
+	drive, err := ParseSmartctlDriveJSON(data)
+	if err != nil {
+		t.Fatalf("ParseSmartctlDriveJSON() error = %v", err)
+	}
+
+	const expectedBytes int64 = 95807222632 * 512
+	if drive.TotalBytesWritten != expectedBytes {
+		t.Errorf("TotalBytesWritten = %d, want %d", drive.TotalBytesWritten, expectedBytes)
+	}
+}
+
 func TestParseDriveInfo_HDD(t *testing.T) {
 	output := loadTestData(t, "smartctl_hdd.json")
 	drive := parseDriveInfo("/dev/sdb", output)

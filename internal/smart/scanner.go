@@ -436,7 +436,9 @@ func parseATADrive(drive *DriveInfo, s SmartctlOutput) {
 			if drive.WearLevelingValue < 0 {
 				drive.WearLevelingValue = attr.Value
 			}
-		case AttrTotalLBAsWritten:
+		}
+
+		if isTotalLBAsWrittenAttribute(attr.ID, attr.Name) {
 			sectorSize := int64(drive.LogicalSector)
 			if sectorSize == 0 {
 				sectorSize = 512
@@ -446,7 +448,16 @@ func parseATADrive(drive *DriveInfo, s SmartctlOutput) {
 	}
 }
 
-// updateHealthStatus updates the drive health status based on critical attributes
+func isTotalLBAsWrittenAttribute(id int, name string) bool {
+	if id == AttrTotalLBAsWritten {
+		return true
+	}
+
+	normalizedName := strings.ToLower(strings.NewReplacer("_", "", "-", "", " ", "").Replace(name))
+	return normalizedName == "totallbaswritten"
+}
+
+// updateHealthStatus updates the drive health status based on critical attributes.
 func updateHealthStatus(drive *DriveInfo) {
 	if drive.IsNVMe {
 		if drive.NVMeHealthLog != nil {
