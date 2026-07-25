@@ -88,6 +88,33 @@ internal/capacitytest/
 
 Each package must expose a small interface that can be tested independently. Platform-specific APIs must not leak into the engine.
 
+## 5.1 Normative Safety Invariants
+
+The following rules are non-overridable, including in expert mode:
+
+- Destructive mode fails closed whenever target identity, storage topology, active use, exclusive access, size, alignment, or range bounds cannot be established conclusively.
+- Safety checks are repeated immediately before the first write, after every reopen or reconnection, and before any resumed write.
+- A hot-plug event, identity ambiguity, topology change, failed required flush, checkpoint failure, thermal abort, or range violation terminates writes without automatic continuation.
+- Destructive byte ranges are overflow-checked half-open intervals `[start, end)` relative to one precisely identified target object. They are never rounded outward.
+- Expert settings may reduce performance or diagnostic coverage, but may not weaken identity checks, authorized bounds, system-disk protection, required synchronization, checkpoint integrity, or thermal hard stops.
+- Unsupported combinations are rejected during preflight. Nuther never silently normalizes a destructive range or safety-relevant option.
+
+## 5.2 Platform Capability Contract
+
+Each platform adapter must publish a capability record covering:
+
+- supported raw target objects: physical disk, partition, or platform volume;
+- stable identity sources and confidence level;
+- storage-topology and physical-ancestor discovery;
+- exclusive locking/offline behavior;
+- sector geometry and alignment;
+- buffered, direct, flush, and cache-control guarantees;
+- filesystem allocation reporting;
+- temperature sensors and freshness;
+- supported safety degradations and their verdict consequences.
+
+Equivalent capability states must lead to equivalent preflight and verdict decisions across operating systems. A release-owned matrix documents the concrete Linux, macOS, and Windows APIs and the combinations eligible for certifying verdicts.
+
 ## 6. Run Lifecycle
 
 Every run is a persisted state machine.
@@ -98,14 +125,16 @@ Before any write, Nuther must:
 
 - resolve a stable device identity;
 - record model, serial, capacity, transport, logical sector size, and physical sector size when available;
-- detect whether the target hosts the running operating system;
+- resolve all active system resources—including root/system, boot/EFI, recovery when active, executable and data volumes used by Nuther, swap/pagefile, and hibernation—to every physical storage ancestor;
+- reject raw mode if the selected target is any such ancestor, or if ancestry cannot be determined conclusively;
 - determine privileges and backend capabilities;
-- detect mounted partitions, open volumes, swap/paging use, RAID membership, and dependent volumes where supported;
+- detect mounted partitions, open volumes, swap/paging use, encryption layers, RAID/LVM/device-mapper/APFS/Storage Spaces membership, pools, virtual-disk backing, and dependent volumes; inconclusive discovery rejects raw mode;
 - calculate the exact target range and expected write volume;
 - validate alignment, block size, concurrency, cache, and synchronization settings;
 - probe temperature telemetry availability;
 - estimate duration as a range rather than a falsely precise timestamp;
 - estimate device write impact, especially for SSDs;
+- acquire exclusive access for raw mode and pin the opened object to the resolved identity;
 - persist the immutable run configuration before starting.
 
 A failed preflight performs no test write.
@@ -140,6 +169,8 @@ The engine rereads the configured range and verifies content against the expecte
 - timeouts and operating-system I/O errors;
 - unusually slow windows.
 
+Certifying verification requires the write phase to finish its required synchronization boundary, close and reopen the target, revalidate identity/topology/size, and use the strongest platform-supported cache-bypass or cache-invalidation mechanism. If Nuther cannot establish that reads are not satisfied solely by the application page cache, the report records `verification_strength: cached_or_unknown` and the run cannot receive a capacity-certifying `PASS`.
+
 ### 6.5 Finalize
 
 The engine:
@@ -163,6 +194,8 @@ Required final verdicts include:
 - `INCOMPLETE`
 
 `PASS` is permitted only when the complete intended range was written, durably synchronized according to the selected policy, read, and verified. A sampled test must never produce a full-capacity `PASS`.
+
+Verdicts have deterministic precedence: `SAFETY_ABORT` > `DATA_CORRUPTION` or `CAPACITY_MISMATCH` > `IO_FAILURE` > `THERMAL_ABORT` > `USER_ABORT` > `INCOMPLETE` > `PARTIAL_PASS` > `PASS`. Integrity verdict, run completion status, finalization status, and cleanup status are also stored as separate fields so cleanup failure cannot hide a successful or failed integrity result. `PARTIAL_PASS` means every byte in the configured partial range met the required synchronization and verification strength, while less than the full certifiable target was covered.
 
 ## 7. Safe File Mode
 
@@ -195,10 +228,16 @@ Nuther must not describe free-space validation as whole-device validation.
 
 ### 7.3 Filesystem Safety
 
-- On the active system volume, enforce a minimum free-space reserve that cannot be disabled.
+- On the active system volume, enforce a minimum free-space reserve that cannot be disabled: `max(5% of filesystem capacity, 10 GiB)` plus a platform/filesystem metadata allowance. Other volumes default to `max(5%, 1 GiB)`.
 - Refuse configurations that would cross the enforced reserve.
-- Detect an unexpected fall in free space and stop safely before exhausting the volume where feasible.
+- Requery filesystem-local available space before every allocation unit and batch; stop before crossing the reserve.
+- Treat inability to obtain reliable availability as a preflight failure on the active system volume.
+- Treat `ENOSPC` or its platform equivalent as an immediate safety stop, never as a retryable write error.
 - Use a recognizable Nuther directory and manifest so stale files can be attributed and safely recovered.
+
+The file backend must securely create a new, unpredictable run directory without following symlinks, junctions, reparse points, or mount-point substitutions. It pins filesystem/volume identity and uses handle-relative operations where available. Every artifact is recorded in the manifest with identity and ownership metadata. Cleanup deletes only artifacts whose run identity, manifest entry, ownership, and pinned filesystem location all match; otherwise cleanup is refused and reported.
+
+Writes must be non-sparse. The report records logical bytes and allocated bytes separately and detects known compression, deduplication, quotas, copy-on-write, and thin-provisioning conditions where APIs permit. A certifying file-mode verdict requires verified allocated extents. If physical allocation cannot be established, the run receives a degraded, non-certifying verification result rather than a full capacity `PASS`.
 
 ## 8. Destructive Raw-device Mode
 
@@ -215,6 +254,8 @@ Raw mode directly overwrites the selected device or selected range.
 - The final confirmation clearly states that the selected range will be destroyed.
 
 The operating-system device path alone is never considered a stable identity.
+
+Stable identity is a versioned tuple with a confidence classification. It combines the strongest available immutable hardware identifier, capacity, logical and physical sector geometry, transport identity, and bus/location information where appropriate. Serial-only identity is insufficient when absent, duplicated, truncated, or bridge-generated. Destructive mode is rejected when the tuple is absent, ambiguous, or non-unique. Identity is revalidated on every open/reopen and after any device event; disconnect/reconnect terminates the run and requires an explicit resume flow.
 
 ### 8.2 Active System Disk
 
@@ -241,6 +282,8 @@ Expert mode supports:
 - initial, middle, or final percentage ranges;
 - distributed samples;
 - continuation of an interrupted configured range.
+
+All ranges are overflow-checked half-open byte intervals `[start, end)` relative to a named target object. Reports and destructive confirmations show exact byte bounds and inclusive LBA coverage. Start and end must already satisfy sector and backend alignment; Nuther rejects rather than rounds outward. Size and bounds are freshly queried immediately before writing and after every reopen.
 
 The report must distinguish:
 
@@ -275,17 +318,18 @@ Selecting a preset populates visible parameters. It does not conceal their value
 - worker count;
 - queue depth;
 - exact range or volume to test;
-- pattern algorithm and seed;
+- approved certification pattern and seed;
 - cache and synchronization policy;
 - metric sampling interval;
 - retry count and backoff;
-- behavior after an error;
-- phase ordering;
+- bounded retry policy for explicitly retryable short/transient I/O errors;
 - file retention and cleanup behavior;
 - fixed cooldown duration;
 - thermal thresholds and timing.
 
-The engine validates the complete combination before execution. Unsupported or invalid combinations must be rejected or visibly normalized, never silently ignored.
+V1 supports only these phase sequences: `write -> verify`, `write-only` with a non-certifying result, and `verify-resume` for data written by the same compatible run. Arbitrary phase ordering and user-defined continuation after errors are out of scope. The engine validates the complete combination before execution. Unsupported or invalid combinations are rejected. Non-safety performance values may be visibly clamped inward only when the resulting value remains inside already confirmed bounds.
+
+Non-overridable fatal categories are safety uncertainty, identity or topology change, unauthorized range, thermal abort, checkpoint commit failure, required synchronization failure, and wrong-offset data. Retries are allowed only for classified transient operations, must preserve the exact offset and remaining byte count, and are bounded. Diagnostic reading may continue after corruption when explicitly selected, but cannot restore `PASS` and cannot authorize additional writes.
 
 ## 11. Cache and Synchronization Policies
 
@@ -299,6 +343,8 @@ Required policies:
 Reports record both the requested policy and the policy actually applied. If an operating system, filesystem, or device cannot honor a requested feature, Nuther marks it unavailable rather than claiming success.
 
 Metrics must distinguish bytes accepted by the application from bytes confirmed after the configured synchronization boundary.
+
+The report records distinct durability levels: `application_accepted`, `os_flush_acknowledged`, `device_flush_requested`, `device_flush_acknowledged`, and `unsupported_or_unknown`. Platform adapters document what each API can actually prove. A failed or unsupported boundary required by the selected certifying profile prevents `PASS`; Nuther must not label data physically durable when the device or bridge cannot acknowledge that guarantee.
 
 ## 12. Thermal Regulation
 
@@ -329,6 +375,10 @@ If temperature telemetry is unavailable:
 - record the degraded protection in all reports;
 - never label the run as adaptively thermally protected.
 
+The fallback is mandatory and non-zero. Initial conservative defaults are batches no larger than 32 GiB followed by at least 60 seconds of pause for HDD/SATA SSD, and batches no larger than 16 GiB followed by at least 90 seconds for NVMe; these defaults are subject to validation on real hardware before release. When telemetry is unavailable or becomes invalid, continuous mode and values below the validated fallback minima are rejected or suspended until the fallback is applied. The maximum-throughput preset visibly degrades to this fallback.
+
+The thermal adapter reports all relevant drive/controller sensors, their source, update time, and validity. Regulation uses the hottest valid relevant sensor. Readings outside documented bounds, repeated errors, or readings older than three expected sampling periods are stale. Sensor loss or staleness during a run immediately transitions to the fixed fallback; if the fallback cannot be safely entered, the run aborts. The transition is persisted in timeline and report degradations.
+
 ## 13. Checkpoints and Safe Resume
 
 At every completed batch:
@@ -338,13 +388,19 @@ At every completed batch:
 3. record completed ranges, expected pattern identity, metrics cursor, target identity, and immutable configuration;
 4. continue only after checkpoint persistence succeeds.
 
+The checkpoint stores separate written, synchronization-confirmed, and verified interval sets/frontiers; active phase; partial unit; timeline generation; and finalization state. The restart contract explicitly covers interruption before write, during partial write, after synchronization but before checkpoint publication, during verification, and during finalization. Nuther revalidates the last committed safe unit of the interrupted phase and continues from that phase's frontier.
+
+Checkpoint commit uses generation-numbered files: write the next generation, flush contents, verify checksum, atomically publish with the platform-supported replacement primitive, then durably commit the containing directory or documented platform equivalent. Checkpoint and streamed timeline generations must agree. Recovery may fall back only to the newest complete checksum-valid matching generation; it never reconstructs or guesses missing state.
+
 After interruption:
 
 1. load and validate the checkpoint;
 2. re-resolve the stable target identity;
-3. reject resume if target or immutable configuration differs;
-4. reread and fully verify the last recorded batch;
-5. resume at the next batch only after successful verification.
+3. for raw mode, rerun the complete current safety preflight, including system ancestry, active dependencies, privileges, exclusive access, capacity, target bounds, and identity confidence;
+4. reject resume if target, topology, bounds, safety state, or immutable configuration differs or is inconclusive;
+5. require the same destructive authorization contract again, including interactive confirmation when resumed from the TUI;
+6. reread and fully verify the last committed safe unit for the interrupted phase;
+7. resume from that phase's next safe frontier only after successful verification.
 
 The report preserves separate timeline segments before and after interruption. It must not create an artificial continuous graph.
 
@@ -383,6 +439,8 @@ Statistics are calculated separately for writes, reads, individual batches, and 
 
 The report must document sampling interval, excluded intervals, and calculation rules so numbers remain interpretable.
 
+Normative calculations use monotonic elapsed time and byte deltas. Instantaneous throughput is bytes completed during one sample interval divided by active monotonic seconds. Aggregate throughput is total bytes divided by active phase time and excludes declared pause intervals. Percentiles operate on fixed-duration time samples and are time-weighted; batches and requests are reported separately rather than mixed into that population. The default sustained metric excludes the first 30 seconds or first 1 GiB of a phase, whichever completes first. The slowest window uses a fixed 60-second active-I/O window. Synchronization latency is reported separately; bytes become synchronization-confirmed only at the successful boundary. Golden-data tests define every formula and remain stable when the display sampling interval changes.
+
 ## 15. Capacity and Integrity Findings
 
 Required findings include:
@@ -400,6 +458,8 @@ Required findings include:
 - exceptionally slow ranges.
 
 The pattern design must make it computationally practical to regenerate expected data for arbitrary offsets without retaining the entire written dataset.
+
+V1 includes one mandatory, versioned certification pattern. Each independently verifiable block binds pattern version, run ID, stable target identity digest, absolute offset, payload length, and seed, and contains an offset-addressable pseudorandom payload plus a strong payload checksum. The specification and test vectors for that pattern are part of implementation planning. Only approved certification patterns may produce a certifying verdict; experimental or compressible patterns are diagnostic-only.
 
 ## 16. TUI Integration
 
@@ -523,6 +583,8 @@ Large timelines may use a streaming writer during execution. Finalization must n
 - Windows: temporary VHD/VHDX devices.
 - Dedicated physical HDD, SATA SSD, NVMe, USB flash, and counterfeit/fault-injection test media where available.
 
+Shipping destructive raw mode requires a documented release-gate matrix with at least one real removable device tested on Linux, macOS, and Windows. Each platform must include negative evidence for active-system ancestry, mounted or pooled dependencies, unavailable or ambiguous identity, failed exclusive access, alias paths, identity mismatch, disconnect/reconnect, non-aligned bounds, size change, and inconclusive topology. Any unresolved fail-closed safety case blocks raw-mode release on that platform; file mode may ship independently.
+
 No automated test may access a real raw device unless all of the following are present:
 
 - explicit environment opt-in;
@@ -556,12 +618,25 @@ The feature is ready when:
 - a run interrupted after a checkpoint revalidates the last batch before resuming;
 - fixed cooldown remains active when temperature telemetry is unavailable;
 - the active system disk cannot be destructively tested;
+- raw testing fails closed when physical ancestry or active-use topology is inconclusive;
+- every raw resume repeats the complete safety preflight and destructive authorization;
+- identity remains pinned through exclusive access and is revalidated after every reopen;
+- exact half-open bounds cannot be rounded or written outside the confirmed range;
+- file-mode reserve checks prevent active-volume exhaustion races and path substitution;
+- certifying verification cannot be satisfied solely from the application page cache;
+- checkpoint and timeline generations recover deterministically after simulated power-loss points;
+- mandatory non-zero thermal fallback activates when telemetry is absent, stale, or lost;
+- aggregate metric formulas pass fixed golden-data tests;
 - a stable-identity mismatch prevents destructive writes;
 - partial tests never receive a full-capacity `PASS`;
 - JSON reports are versioned, parseable, and retain all applied settings and degradations;
 - destructive physical-device validation is performed on dedicated test hardware under the explicit safety procedure.
 
-## 23. Key Decisions
+## 23. V1 Compatibility Boundaries
+
+To keep the expert surface testable, V1 certifying profiles permit only approved combinations from a maintained compatibility matrix. The matrix covers backend, target object, phase sequence, pattern, synchronization level, verification strength, I/O mode, alignment, concurrency range, thermal mode, and retry policy. Arbitrary patterns, arbitrary phase ordering, unbounded retries, and continuation after fatal errors are explicitly excluded. Every permitted combination must map to acceptance coverage; every other combination is a preflight error.
+
+## 24. Key Decisions
 
 - Native Go engine, not wrappers around F3/H2testw.
 - Common orchestration core with file and raw-device backends.
