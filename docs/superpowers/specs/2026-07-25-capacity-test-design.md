@@ -125,8 +125,8 @@ Before any write, Nuther must:
 
 - resolve a stable device identity;
 - record model, serial, capacity, transport, logical sector size, and physical sector size when available;
-- resolve all active system resources—including root/system, boot/EFI, recovery when active, executable and data volumes used by Nuther, swap/pagefile, and hibernation—to every physical storage ancestor;
-- reject raw mode if the selected target is any such ancestor, or if ancestry cannot be determined conclusively;
+- resolve both the selected target and all active system resources—including root/system, boot/EFI, recovery when active, executable and data volumes used by Nuther, swap/pagefile, and hibernation—to complete physical-ancestor sets;
+- reject raw mode whenever the selected target's physical-ancestor set intersects any protected system resource's set, covering ancestors, descendants, siblings on the same physical disk, partitions, platform volumes, and virtual-disk layers; reject when either resolution is inconclusive;
 - determine privileges and backend capabilities;
 - detect mounted partitions, open volumes, swap/paging use, encryption layers, RAID/LVM/device-mapper/APFS/Storage Spaces membership, pools, virtual-disk backing, and dependent volumes; inconclusive discovery rejects raw mode;
 - calculate the exact target range and expected write volume;
@@ -195,7 +195,7 @@ Required final verdicts include:
 
 `PASS` is permitted only when the complete intended range was written, durably synchronized according to the selected policy, read, and verified. A sampled test must never produce a full-capacity `PASS`.
 
-Verdicts have deterministic precedence: `SAFETY_ABORT` > `DATA_CORRUPTION` or `CAPACITY_MISMATCH` > `IO_FAILURE` > `THERMAL_ABORT` > `USER_ABORT` > `INCOMPLETE` > `PARTIAL_PASS` > `PASS`. Integrity verdict, run completion status, finalization status, and cleanup status are also stored as separate fields so cleanup failure cannot hide a successful or failed integrity result. `PARTIAL_PASS` means every byte in the configured partial range met the required synchronization and verification strength, while less than the full certifiable target was covered.
+Verdicts have deterministic precedence: `SAFETY_ABORT` > `CAPACITY_MISMATCH` > `DATA_CORRUPTION` > `IO_FAILURE` > `THERMAL_ABORT` > `USER_ABORT` > `INCOMPLETE` > `PARTIAL_PASS` > `PASS`. Capacity mismatch takes primary precedence over corruption because it describes a device-wide addressability failure; all additional integrity findings remain in an ordered findings collection. Integrity verdict, run completion status, finalization status, and cleanup status are also stored as separate fields so cleanup failure cannot hide a successful or failed integrity result. `PARTIAL_PASS` means every byte in the configured partial range met the required synchronization and verification strength, while less than the full certifiable target was covered.
 
 ## 7. Safe File Mode
 
@@ -231,6 +231,8 @@ Nuther must not describe free-space validation as whole-device validation.
 - On the active system volume, enforce a minimum free-space reserve that cannot be disabled: `max(5% of filesystem capacity, 10 GiB)` plus a platform/filesystem metadata allowance. Other volumes default to `max(5%, 1 GiB)`.
 - Refuse configurations that would cross the enforced reserve.
 - Requery filesystem-local available space before every allocation unit and batch; stop before crossing the reserve.
+- On active system volumes, use a race-resistant reservation mechanism before test writes: preallocate each next Nuther-owned extent with the strongest filesystem-native allocation guarantee, verify allocated bytes and remaining reserve after allocation, then write only within that reserved extent. The maximum uncommitted allocation unit is 64 MiB by default and is never larger than 1% of the enforced reserve.
+- If the platform/filesystem cannot provide real allocation reservation or cannot confirm the reserve after allocation, file capacity testing on the active system volume fails closed. The user may select another volume; Nuther does not downgrade this guarantee silently.
 - Treat inability to obtain reliable availability as a preflight failure on the active system volume.
 - Treat `ENOSPC` or its platform equivalent as an immediate safety stop, never as a retryable write error.
 - Use a recognizable Nuther directory and manifest so stale files can be attributed and safely recovered.
@@ -622,7 +624,7 @@ The feature is ready when:
 - every raw resume repeats the complete safety preflight and destructive authorization;
 - identity remains pinned through exclusive access and is revalidated after every reopen;
 - exact half-open bounds cannot be rounded or written outside the confirmed range;
-- file-mode reserve checks prevent active-volume exhaustion races and path substitution;
+- active-volume file mode uses confirmed preallocation with bounded exposure and fails closed when the reserve cannot be guaranteed; path substitution is prevented;
 - certifying verification cannot be satisfied solely from the application page cache;
 - checkpoint and timeline generations recover deterministically after simulated power-loss points;
 - mandatory non-zero thermal fallback activates when telemetry is absent, stale, or lost;
