@@ -155,6 +155,18 @@ func GetDriveInfo(device string) (DriveInfo, error) {
 	return GetDriveInfoWithType(device, "")
 }
 
+// smartctlOutputUsable reports whether smartctl output contains usable drive
+// data even when the command exited non-zero. smartctl returns warning exit
+// statuses (e.g. bit 64: some ATA log structure not read) that are common on
+// USB bridges but still include a full drive identification block.
+func smartctlOutputUsable(output []byte) bool {
+	var smartOutput SmartctlOutput
+	if err := json.Unmarshal(output, &smartOutput); err != nil {
+		return false
+	}
+	return smartOutput.ModelName != "" || smartOutput.ModelFamily != ""
+}
+
 // GetDriveInfoWithType retrieves detailed information for a specific device with optional type
 func GetDriveInfoWithType(device string, deviceType string) (DriveInfo, error) {
 	var output []byte
@@ -166,16 +178,16 @@ func GetDriveInfoWithType(device string, deviceType string) (DriveInfo, error) {
 		output, err = runSmartctl("-a", "-j", device)
 	}
 
-	if err != nil {
+	if err != nil && !smartctlOutputUsable(output) {
 		if deviceType == "scsi" || deviceType == "" {
 			usbTypes := []string{"sat", "sat,auto", "usbsunplus", "usbjmicron", "usbcypress"}
 			for _, usbType := range usbTypes {
 				output, err = runSmartctl("-a", "-j", "-d", usbType, device)
-				if err == nil {
+				if err == nil || smartctlOutputUsable(output) {
 					break
 				}
 			}
-			if err != nil {
+			if err != nil && !smartctlOutputUsable(output) {
 				return DriveInfo{}, fmt.Errorf("smartctl failed for %s: %w", device, err)
 			}
 		} else {

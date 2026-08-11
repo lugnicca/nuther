@@ -692,6 +692,43 @@ func TestGetDriveInfoWithType_NoType(t *testing.T) {
 	}
 }
 
+func TestGetDriveInfoWithType_Exit64WithDataIsUsable(t *testing.T) {
+	sataJSON := loadTestDataRaw(t, "smartctl_sata_ssd.json")
+	withMockedSmartctl(t, func(args ...string) ([]byte, error) {
+		// smartctl warning exit status 64 with full drive data: common on USB bridges.
+		return sataJSON, errors.New("exit status 64")
+	})
+
+	drive, err := GetDriveInfoWithType("/dev/sdc", "sat")
+	if err != nil {
+		t.Fatalf("GetDriveInfoWithType(sat) error = %v, want success with data", err)
+	}
+	if drive.Model != "Samsung SSD 870 EVO 500GB" {
+		t.Errorf("Model = %q, want SATA model from usable output", drive.Model)
+	}
+}
+
+func TestGetDriveInfoWithType_Exit64FallbackToSat(t *testing.T) {
+	sataJSON := loadTestDataRaw(t, "smartctl_sata_ssd.json")
+	withMockedSmartctl(t, func(args ...string) ([]byte, error) {
+		// First call (scsi, no -d) fails hard; sat attempt returns exit 64 with data.
+		for _, a := range args {
+			if a == "sat" {
+				return sataJSON, errors.New("exit status 64")
+			}
+		}
+		return nil, errors.New("unknown USB bridge")
+	})
+
+	drive, err := GetDriveInfoWithType("/dev/sdc", "scsi")
+	if err != nil {
+		t.Fatalf("GetDriveInfoWithType(scsi) error = %v, want fallback success", err)
+	}
+	if drive.Model != "Samsung SSD 870 EVO 500GB" {
+		t.Errorf("Model = %q, want SATA model from sat fallback", drive.Model)
+	}
+}
+
 func TestGetDriveInfo(t *testing.T) {
 	sataJSON := loadTestDataRaw(t, "smartctl_sata_ssd.json")
 	withMockedSmartctl(t, func(args ...string) ([]byte, error) {
