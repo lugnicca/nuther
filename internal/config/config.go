@@ -13,6 +13,7 @@ type Config struct {
 	Colors      ColorConfig       `yaml:"colors"`
 	Display     DisplayConfig     `yaml:"display"`
 	Keybindings KeybindingsConfig `yaml:"keybindings"`
+	Screenshot  ScreenshotConfig  `yaml:"screenshot"`
 }
 
 // ColorConfig allows custom color overrides
@@ -51,6 +52,11 @@ type KeybindingsConfig struct {
 	Refresh    string `yaml:"refresh"`
 	Help       string `yaml:"help"`
 	Screenshot string `yaml:"screenshot"`
+}
+
+// ScreenshotConfig controls where overview images are saved
+type ScreenshotConfig struct {
+	Dir string `yaml:"screenshot_dir"`
 }
 
 // GetConfigPath returns the config file path

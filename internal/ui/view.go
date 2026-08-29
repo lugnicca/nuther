@@ -60,7 +60,7 @@ func (m Model) View() string {
 	case TabSnapshots:
 		sections = append(sections, views.RenderSnapshots(m.SnapshotIndex, m.SelectedSnapshot, m.Width, m.Height, m.Styles))
 	case TabSettings:
-		sections = append(sections, views.RenderSettings(m.Config, m.SettingsSelected, m.SettingsMessage, m.Width, m.Styles))
+		sections = append(sections, views.RenderSettings(m.Config, m.SettingsSelected, m.SettingsMessage, m.SettingsEditingDir, m.SettingsDirBuffer, m.Width, m.Styles))
 	default:
 		drive := m.GetCurrentDrive()
 		if drive != nil {

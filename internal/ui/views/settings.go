@@ -12,7 +12,7 @@ import (
 )
 
 // RenderSettings renders the settings tab
-func RenderSettings(cfg *config.Config, selected int, message string, width int, s *styles.Styles) string {
+func RenderSettings(cfg *config.Config, selected int, message string, editingDir bool, dirBuffer string, width int, s *styles.Styles) string {
 	var result strings.Builder
 
 	result.WriteString("\n")
@@ -64,6 +64,17 @@ func RenderSettings(cfg *config.Config, selected int, message string, width int,
 		s,
 		borderStyle,
 	))
+	result.WriteString("\n")
+
+	// Screenshot Dir setting (free-text path)
+	result.WriteString(renderSettingTextRow(
+		"Screenshot Dir",
+		cfg.Screenshot.Dir,
+		dirBuffer,
+		editingDir,
+		selected == 3,
+		s,
+	))
 
 	// Status message
 	if message != "" {
@@ -74,7 +85,11 @@ func RenderSettings(cfg *config.Config, selected int, message string, width int,
 
 	// Help text
 	result.WriteString("\n\n ")
-	result.WriteString(s.Dim.Render("Press Enter to save settings to config file"))
+	if editingDir {
+		result.WriteString(s.Dim.Render("Enter commit · Esc cancel · Backspace delete"))
+	} else {
+		result.WriteString(s.Dim.Render("Enter saves settings; Enter on Screenshot Dir edits it"))
+	}
 	result.WriteString("\n ")
 	configPath, _ := config.GetConfigPath()
 	result.WriteString(s.Dim.Render(fmt.Sprintf("Config: %s", configPath)))
@@ -113,6 +128,44 @@ func renderSettingRow(label, currentValue string, options []string, isSelected b
 		row.WriteString("   ")
 		row.WriteString(s.Dim.Render(components.PadCenter(currentValue, 14)))
 		row.WriteString("  ")
+	}
+
+	return row.String()
+}
+
+func renderSettingTextRow(label, value, buffer string, editing, isSelected bool, s *styles.Styles) string {
+	var row strings.Builder
+
+	// Selection indicator
+	if isSelected {
+		row.WriteString(" ")
+		row.WriteString(lipgloss.NewStyle().Foreground(s.AccentPrimary).Bold(true).Render("▶"))
+		row.WriteString(" ")
+	} else {
+		row.WriteString("   ")
+	}
+
+	// Label
+	labelStyle := s.Base
+	if isSelected {
+		labelStyle = s.Bold.Foreground(s.AccentPrimary)
+	}
+	row.WriteString(labelStyle.Render(components.PadRight(label, 16)))
+
+	if editing {
+		// Show the working buffer with a cursor underscore
+		row.WriteString(" ")
+		row.WriteString(lipgloss.NewStyle().Foreground(s.AccentSecondary).Render("✎"))
+		row.WriteString(" ")
+		row.WriteString(s.Bold.Foreground(lipgloss.Color("#ffffff")).Render(components.Truncate(buffer+"_", 40)))
+	} else if isSelected {
+		row.WriteString(" ")
+		row.WriteString(s.Bold.Foreground(lipgloss.Color("#ffffff")).Render(components.Truncate(value, 40)))
+		row.WriteString(" ")
+		row.WriteString(s.Dim.Render("(Enter to edit)"))
+	} else {
+		row.WriteString("   ")
+		row.WriteString(s.Dim.Render(components.Truncate(value, 40)))
 	}
 
 	return row.String()

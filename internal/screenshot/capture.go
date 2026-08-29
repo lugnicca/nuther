@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -43,13 +44,47 @@ func CaptureToClipboard() error {
 	return nil
 }
 
-// GetScreenshotPath returns a path for saving screenshots
-func GetScreenshotPath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		homeDir = os.TempDir()
+// GetScreenshotPath returns a path for saving a drive overview image. The
+// directory defaults to the user's home dir (or temp dir) when empty. The id
+// is the drive's device identifier (e.g. /dev/disk3); only its basename is
+// used to keep the filename short and space-free.
+func GetScreenshotPath(dir, id, serial string) string {
+	if dir == "" {
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			dir = home
+		} else {
+			dir = os.TempDir()
+		}
+	}
+
+	id = strings.TrimSpace(id)
+	if id == "" {
+		id = "unknown"
+	} else {
+		id = filepath.Base(id)
+	}
+	id = sanitizeFilenamePart(id)
+
+	serial = sanitizeFilenamePart(serial)
+	if serial == "" {
+		serial = "unknown"
 	}
 
 	timestamp := time.Now().Format("20060102_150405")
-	return filepath.Join(homeDir, fmt.Sprintf("nuther_screenshot_%s.png", timestamp))
+	return filepath.Join(dir, fmt.Sprintf("nuther_%s_%s_%s.png", id, serial, timestamp))
+}
+
+// sanitizeFilenamePart replaces characters unsafe in filenames (including
+// spaces) with underscores.
+func sanitizeFilenamePart(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|', ' ':
+			return '_'
+		}
+		if r < 0x20 {
+			return '_'
+		}
+		return r
+	}, strings.TrimSpace(s))
 }

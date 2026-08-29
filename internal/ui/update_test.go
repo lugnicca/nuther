@@ -579,6 +579,113 @@ func TestHandleKeyPressEnterNotInSettings(t *testing.T) {
 	}
 }
 
+func TestHandleKeyPressEnterOnScreenshotDirEntersEditMode(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Screenshot.Dir = "/home/user/pics"
+	m := NewModel(cfg)
+	m.ActiveTab = TabSettings
+	m.SettingsSelected = SettingsScreenshotDir
+
+	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	updatedModel, cmd := m.handleKeyPress(enterMsg)
+	model := updatedModel.(Model)
+
+	if cmd != nil {
+		t.Error("Entering edit mode should not return a command")
+	}
+	if !model.SettingsEditingDir {
+		t.Error("SettingsEditingDir should be true after Enter on dir row")
+	}
+	if model.SettingsDirBuffer != "/home/user/pics" {
+		t.Errorf("SettingsDirBuffer = %q, want %q", model.SettingsDirBuffer, "/home/user/pics")
+	}
+}
+
+func TestHandleKeyPressScreenshotDirEditFlow(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Screenshot.Dir = "/old"
+	m := NewModel(cfg)
+	m.ActiveTab = TabSettings
+	m.SettingsSelected = SettingsScreenshotDir
+	m.SettingsEditingDir = true
+	m.SettingsDirBuffer = "/old"
+
+	// Printable runes append to the buffer
+	runesMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'-', 'n', 'e', 'w'}}
+	updatedModel, _ := m.handleKeyPress(runesMsg)
+	model := updatedModel.(Model)
+	if model.SettingsDirBuffer != "/old-new" {
+		t.Fatalf("buffer after typing = %q, want %q", model.SettingsDirBuffer, "/old-new")
+	}
+
+	// Backspace deletes the last rune
+	bsMsg := tea.KeyMsg{Type: tea.KeyBackspace}
+	updatedModel, _ = model.handleKeyPress(bsMsg)
+	model = updatedModel.(Model)
+	if model.SettingsDirBuffer != "/old-ne" {
+		t.Fatalf("buffer after backspace = %q, want %q", model.SettingsDirBuffer, "/old-ne")
+	}
+
+	// Esc cancels and discards the buffer
+	escMsg := tea.KeyMsg{Type: tea.KeyEsc}
+	updatedModel, _ = model.handleKeyPress(escMsg)
+	model = updatedModel.(Model)
+	if model.SettingsEditingDir {
+		t.Error("SettingsEditingDir should be false after Esc")
+	}
+	if model.Config.Screenshot.Dir != "/old" {
+		t.Errorf("Esc should not commit, Config.Screenshot.Dir = %q, want %q", model.Config.Screenshot.Dir, "/old")
+	}
+}
+
+func TestHandleKeyPressScreenshotDirEnterCommits(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Screenshot.Dir = "/old"
+	m := NewModel(cfg)
+	m.ActiveTab = TabSettings
+	m.SettingsSelected = SettingsScreenshotDir
+	m.SettingsEditingDir = true
+	m.SettingsDirBuffer = "/new/dir"
+
+	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	updatedModel, cmd := m.handleKeyPress(enterMsg)
+	model := updatedModel.(Model)
+
+	if cmd != nil {
+		t.Error("Committing the dir should not save yet (no command)")
+	}
+	if model.SettingsEditingDir {
+		t.Error("SettingsEditingDir should be false after commit")
+	}
+	if model.Config.Screenshot.Dir != "/new/dir" {
+		t.Errorf("Config.Screenshot.Dir = %q, want %q", model.Config.Screenshot.Dir, "/new/dir")
+	}
+}
+
+func TestHandleKeyPressScreenshotDirUpCommitsAndMoves(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Screenshot.Dir = "/old"
+	m := NewModel(cfg)
+	m.ActiveTab = TabSettings
+	m.SettingsSelected = SettingsScreenshotDir
+	m.SettingsEditingDir = true
+	m.SettingsDirBuffer = "/new/dir"
+
+	upMsg := tea.KeyMsg{Type: tea.KeyUp}
+	updatedModel, _ := m.handleKeyPress(upMsg)
+	model := updatedModel.(Model)
+
+	if model.SettingsEditingDir {
+		t.Error("SettingsEditingDir should be false after navigation")
+	}
+	if model.Config.Screenshot.Dir != "/new/dir" {
+		t.Errorf("navigation should commit, Config.Screenshot.Dir = %q", model.Config.Screenshot.Dir)
+	}
+	if model.SettingsSelected != SettingsTempUnit {
+		t.Errorf("SettingsSelected = %d, want %d (moved up)", model.SettingsSelected, SettingsTempUnit)
+	}
+}
+
 func TestHandleKeyPressEnterInSnapshotsOpensSelectedSnapshot(t *testing.T) {
 	store := smartwatch.NewStore(t.TempDir())
 	now := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)

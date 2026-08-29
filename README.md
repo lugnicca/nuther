@@ -139,6 +139,23 @@ On startup, the watcher prints:
 
 Snapshots are stored as browsable JSON files under `snapshots/` with an `index.json` alongside them.
 
+### Screenshot directory
+
+The overview screenshot (pressing `s` on the Overview tab) is saved in your home
+directory by default, with a filename based on the selected drive's disk id
+(device basename) and serial number. To change the save directory, add this to
+`~/.config/nuther/config.yaml`:
+
+```yaml
+screenshot:
+  screenshot_dir: /home/you/Pictures/nuther
+```
+
+Use an absolute path (the `~` shortcut is not expanded). The directory can
+also be changed from the Settings tab: select **Screenshot Dir**, press
+`Enter`, type the path, then `Enter` to commit and `Enter` on any other row
+to save.
+
 ## Keyboard Shortcuts
 
 | Key | Action |
@@ -163,7 +180,7 @@ Snapshots are stored as browsable JSON files under `snapshots/` with an `index.j
 | All Drives | Summary of all detected drives |
 | Sector Grid | Square cell grid for the selected disk sector pressure |
 | Snapshots | Archived S.M.A.R.T. snapshot history and known disks |
-| Settings | Theme and configuration |
+| Settings | Theme, display options, and screenshot directory |
 
 ## Health Status
 

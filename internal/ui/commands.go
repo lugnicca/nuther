@@ -34,7 +34,7 @@ func CaptureScreenshotCmd() tea.Cmd {
 
 func SaveOverviewImageCmd(drive smart.DriveInfo, selectedAttr, scrollOffset, width, height int, s *styles.Styles, cfg *config.Config) tea.Cmd {
 	return func() tea.Msg {
-		path := screenshot.GetScreenshotPath()
+		path := screenshot.GetScreenshotPath(cfg.Screenshot.Dir, drive.Device, drive.Serial)
 		overview := views.RenderOverview(drive, selectedAttr, scrollOffset, width, height, s)
 		if err := screenshot.RenderOverviewImage(overview, path, cfg); err != nil {
 			return ScreenshotMsg{Success: false, Error: err}

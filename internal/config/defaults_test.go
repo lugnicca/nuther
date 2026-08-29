@@ -92,6 +92,14 @@ func TestDefaultConfigKeybindings(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigScreenshot(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.Screenshot.Dir == "" {
+		t.Error("Screenshot.Dir should not be empty by default")
+	}
+}
+
 func TestDefaultConfigIsCopyable(t *testing.T) {
 	cfg1 := DefaultConfig()
 	cfg2 := DefaultConfig()

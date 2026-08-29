@@ -9,7 +9,7 @@ import (
 )
 
 func TestGetScreenshotPath(t *testing.T) {
-	path := GetScreenshotPath()
+	path := GetScreenshotPath("", "/dev/disk3", "S64ANF0R123456")
 
 	if path == "" {
 		t.Error("GetScreenshotPath should return a non-empty path")
@@ -20,9 +20,16 @@ func TestGetScreenshotPath(t *testing.T) {
 		t.Errorf("Path should end with .png, got %q", path)
 	}
 
-	// Should contain nuther_screenshot
-	if !strings.Contains(path, "nuther_screenshot") {
-		t.Errorf("Path should contain nuther_screenshot, got %q", path)
+	// Should contain the device basename and serial, with no spaces
+	filename := filepath.Base(path)
+	if strings.Contains(filename, " ") {
+		t.Errorf("Filename should not contain spaces, got %q", filename)
+	}
+	if !strings.Contains(filename, "disk3") {
+		t.Errorf("Filename should contain device basename, got %q", filename)
+	}
+	if !strings.Contains(filename, "S64ANF0R123456") {
+		t.Errorf("Filename should contain serial, got %q", filename)
 	}
 
 	// Should be in home dir or temp dir
@@ -34,9 +41,9 @@ func TestGetScreenshotPath(t *testing.T) {
 }
 
 func TestGetScreenshotPathContainsTimestamp(t *testing.T) {
-	path1 := GetScreenshotPath()
+	path1 := GetScreenshotPath("", "nvme0n1", "Serial")
 	// Wait a tiny bit to ensure different timestamp
-	path2 := GetScreenshotPath()
+	path2 := GetScreenshotPath("", "nvme0n1", "Serial")
 
 	// Paths should include timestamp format YYYYMMDD_HHMMSS
 	// They might be the same if called within the same second
@@ -46,22 +53,74 @@ func TestGetScreenshotPathContainsTimestamp(t *testing.T) {
 
 	// Both should have the expected filename pattern
 	filename1 := filepath.Base(path1)
-	if !strings.HasPrefix(filename1, "nuther_screenshot_") {
-		t.Errorf("Filename should start with nuther_screenshot_, got %q", filename1)
+	if !strings.HasPrefix(filename1, "nuther_nvme0n1_Serial_") {
+		t.Errorf("Filename should start with nuther_nvme0n1_Serial_, got %q", filename1)
 	}
 }
 
 func TestGetScreenshotPathDirectory(t *testing.T) {
-	path := GetScreenshotPath()
-	dir := filepath.Dir(path)
+	dir := t.TempDir()
+	path := GetScreenshotPath(dir, "disk3", "Serial")
 
-	// Directory should exist (home dir or temp dir)
-	info, err := os.Stat(dir)
-	if os.IsNotExist(err) {
-		t.Errorf("Directory %q should exist", dir)
+	// Directory should be the configured dir
+	if got := filepath.Dir(path); got != dir {
+		t.Errorf("Directory = %q, want %q", got, dir)
 	}
-	if err == nil && !info.IsDir() {
+
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("Directory %q should exist: %v", dir, err)
+	}
+	if !info.IsDir() {
 		t.Errorf("%q should be a directory", dir)
+	}
+}
+
+func TestGetScreenshotPathSanitizesUnsafeCharacters(t *testing.T) {
+	path := GetScreenshotPath(t.TempDir(), `Samsung SSD 980 PRO:With?`, `S<e>r*i"a|l`)
+	filename := filepath.Base(path)
+
+	if strings.ContainsAny(filename, `\/:*?"<>| `) {
+		t.Errorf("Filename should not contain unsafe characters or spaces, got %q", filename)
+	}
+	if !strings.Contains(filename, "Samsung_SSD_980_PRO_With") {
+		t.Errorf("Filename should contain sanitized id, got %q", filename)
+	}
+	if !strings.Contains(filename, "S_e_r_i_a_l") {
+		t.Errorf("Filename should contain sanitized serial, got %q", filename)
+	}
+}
+
+func TestGetScreenshotPathUsesDeviceBasename(t *testing.T) {
+	path := GetScreenshotPath(t.TempDir(), "/dev/disk3", "S64ANF0R123456")
+	filename := filepath.Base(path)
+
+	if !strings.Contains(filename, "nuther_disk3_S64ANF0R123456_") {
+		t.Errorf("Filename should use the device basename, got %q", filename)
+	}
+	if strings.Contains(filename, " ") {
+		t.Errorf("Filename should not contain spaces, got %q", filename)
+	}
+}
+
+func TestGetScreenshotPathModelLikeIdNoSpaces(t *testing.T) {
+	path := GetScreenshotPath(t.TempDir(), "Samsung SSD 980 PRO", "S64ANF0R123456")
+	filename := filepath.Base(path)
+
+	if strings.Contains(filename, " ") {
+		t.Errorf("Filename should not contain spaces, got %q", filename)
+	}
+	if !strings.Contains(filename, "Samsung_SSD_980_PRO") {
+		t.Errorf("Filename should contain sanitized id, got %q", filename)
+	}
+}
+
+func TestGetScreenshotPathFallsBackToUnknown(t *testing.T) {
+	path := GetScreenshotPath(t.TempDir(), "", "")
+	filename := filepath.Base(path)
+
+	if !strings.Contains(filename, "nuther_unknown_unknown_") {
+		t.Errorf("Filename should use unknown fallbacks, got %q", filename)
 	}
 }
 
