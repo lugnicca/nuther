@@ -46,6 +46,7 @@ const (
 	SettingsTheme = iota
 	SettingsShowLogo
 	SettingsTempUnit
+	SettingsScreenshotDir
 	SettingsCount
 )
 
@@ -83,8 +84,10 @@ type Model struct {
 	ScreenshotTime    time.Time
 
 	// Settings state
-	SettingsSelected int // Which setting is selected (0=theme, 1=show_logo, etc.)
-	SettingsMessage  string
+	SettingsSelected   int  // Which setting is selected (0=theme, 1=show_logo, etc.)
+	SettingsMessage    string
+	SettingsEditingDir bool   // True while editing the screenshot dir text field
+	SettingsDirBuffer  string // Working buffer for the screenshot dir text field
 
 	// Bubble Tea components
 	Spinner spinner.Model

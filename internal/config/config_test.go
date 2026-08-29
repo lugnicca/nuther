@@ -74,6 +74,11 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Keybindings.Screenshot != "s" {
 		t.Errorf("Keybindings.Screenshot = %q, want %q", cfg.Keybindings.Screenshot, "s")
 	}
+
+	// Check screenshot defaults
+	if cfg.Screenshot.Dir == "" {
+		t.Error("Screenshot.Dir is empty")
+	}
 }
 
 func TestLoadWithNoConfigFile(t *testing.T) {
@@ -583,7 +588,7 @@ func TestConfigStructTags(t *testing.T) {
 
 	// Verify YAML contains expected keys
 	yamlStr := string(data)
-	expectedKeys := []string{"theme:", "colors:", "display:", "keybindings:"}
+	expectedKeys := []string{"theme:", "colors:", "display:", "keybindings:", "screenshot:"}
 	for _, key := range expectedKeys {
 		if !strings.Contains(yamlStr, key) {
 			t.Errorf("YAML should contain %q", key)

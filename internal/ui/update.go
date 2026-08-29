@@ -113,6 +113,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.ActiveTab == TabSettings && m.SettingsEditingDir {
+		switch msg.Type {
+		case tea.KeyEsc:
+			// Cancel and discard the working buffer
+			m.SettingsEditingDir = false
+			return m, nil
+
+		case tea.KeyEnter:
+			// Commit the buffer to config; a later Enter elsewhere saves it
+			m.Config.Screenshot.Dir = m.SettingsDirBuffer
+			m.SettingsEditingDir = false
+			return m, nil
+
+		case tea.KeyBackspace:
+			runes := []rune(m.SettingsDirBuffer)
+			if len(runes) > 0 {
+				m.SettingsDirBuffer = string(runes[:len(runes)-1])
+			}
+			return m, nil
+
+		case tea.KeyUp, tea.KeyDown:
+			// Commit on navigation, then fall through to normal selection movement
+			m.Config.Screenshot.Dir = m.SettingsDirBuffer
+			m.SettingsEditingDir = false
+
+		case tea.KeyRunes:
+			m.SettingsDirBuffer += string(msg.Runes)
+			return m, nil
+
+		default:
+			// Any other key (tab, arrows, etc.) cancels the edit and is
+			// handled normally below
+			m.SettingsEditingDir = false
+		}
+	}
+
 	switch {
 	case key.Matches(msg, m.KeyMap.Quit):
 		return m, tea.Quit
@@ -197,6 +233,12 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.KeyMap.Enter):
 		if m.ActiveTab == TabSettings {
+			if m.SettingsSelected == SettingsScreenshotDir {
+				// Enter toggles text-edit mode for the screenshot dir row
+				m.SettingsEditingDir = true
+				m.SettingsDirBuffer = m.Config.Screenshot.Dir
+				return m, nil
+			}
 			return m, m.SettingsApply()
 		}
 		if m.ActiveTab == TabSnapshots {

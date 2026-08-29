@@ -405,8 +405,11 @@ func TestSettingsConstants(t *testing.T) {
 	if SettingsTempUnit != 2 {
 		t.Errorf("SettingsTempUnit = %d, want 2", SettingsTempUnit)
 	}
-	if SettingsCount != 3 {
-		t.Errorf("SettingsCount = %d, want 3", SettingsCount)
+	if SettingsScreenshotDir != 3 {
+		t.Errorf("SettingsScreenshotDir = %d, want 3", SettingsScreenshotDir)
+	}
+	if SettingsCount != 4 {
+		t.Errorf("SettingsCount = %d, want 4", SettingsCount)
 	}
 }
 

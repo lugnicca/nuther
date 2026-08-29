@@ -380,12 +380,13 @@ func TestRenderSettings(t *testing.T) {
 		{"theme selected", 0, ""},
 		{"logo selected", 1, ""},
 		{"temp unit selected", 2, ""},
+		{"screenshot dir selected", 3, ""},
 		{"with message", 0, "Settings saved!"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := RenderSettings(cfg, tt.selectedSetting, tt.message, 120, s)
+			result := RenderSettings(cfg, tt.selectedSetting, tt.message, false, "", 120, s)
 
 			if result == "" {
 				t.Error("Settings should not be empty")
@@ -398,6 +399,44 @@ func TestRenderSettings(t *testing.T) {
 	}
 }
 
+func TestRenderSettingsScreenshotDirEditing(t *testing.T) {
+	s := newTestStyles()
+	cfg := config.DefaultConfig()
+	cfg.Screenshot.Dir = "/home/user/Pictures/nuther"
+
+	// Selected but not editing: shows the committed value
+	result := RenderSettings(cfg, 3, "", false, "", 120, s)
+	if !strings.Contains(result, "Screenshot Dir") {
+		t.Error("Settings should contain the Screenshot Dir row")
+	}
+	if !strings.Contains(result, "/home/user/Pictures/nuther") {
+		t.Error("Settings should render the configured screenshot dir")
+	}
+
+	// Editing: shows the working buffer plus cursor underscore
+	result = RenderSettings(cfg, 3, "", true, "/home/user/Pictures", 120, s)
+	if !strings.Contains(result, "/home/user/Pictures_") {
+		t.Errorf("Editing row should show buffer with cursor, got: %q", result)
+	}
+	if strings.Contains(result, "Enter to edit") {
+		t.Error("Editing row should not show the edit hint")
+	}
+}
+
+func TestRenderSettingsScreenshotDirTruncatesLongValue(t *testing.T) {
+	s := newTestStyles()
+	cfg := config.DefaultConfig()
+	cfg.Screenshot.Dir = "/a/very/long/path/that/should/be/truncated/before/it/breaks/the/layout"
+
+	result := RenderSettings(cfg, 3, "", false, "", 120, s)
+	if strings.Contains(result, cfg.Screenshot.Dir) {
+		t.Error("Long screenshot dir should be truncated with ellipsis")
+	}
+	if !strings.Contains(result, "...") {
+		t.Error("Truncated screenshot dir should contain ellipsis")
+	}
+}
+
 func TestRenderSettingsThemes(t *testing.T) {
 	s := newTestStyles()
 
@@ -406,7 +445,7 @@ func TestRenderSettingsThemes(t *testing.T) {
 		cfg := config.DefaultConfig()
 		cfg.Theme = theme
 
-		result := RenderSettings(cfg, 0, "", 120, s)
+		result := RenderSettings(cfg, 0, "", false, "", 120, s)
 		if result == "" {
 			t.Errorf("Settings with theme %q should not be empty", theme)
 		}
