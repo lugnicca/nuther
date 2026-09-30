@@ -173,16 +173,16 @@ func GetDriveInfoWithType(device string, deviceType string) (DriveInfo, error) {
 	var err error
 
 	if deviceType != "" && deviceType != "scsi" {
-		output, err = runSmartctl("-a", "-j", "-d", deviceType, device)
+		output, err = runSmartctl("-a", "-l", "devstat", "-j", "-d", deviceType, device)
 	} else {
-		output, err = runSmartctl("-a", "-j", device)
+		output, err = runSmartctl("-a", "-l", "devstat", "-j", device)
 	}
 
 	if err != nil && !smartctlOutputUsable(output) {
 		if deviceType == "scsi" || deviceType == "" {
 			usbTypes := []string{"sat", "sat,auto", "usbsunplus", "usbjmicron", "usbcypress"}
 			for _, usbType := range usbTypes {
-				output, err = runSmartctl("-a", "-j", "-d", usbType, device)
+				output, err = runSmartctl("-a", "-l", "devstat", "-j", "-d", usbType, device)
 				if err == nil || smartctlOutputUsable(output) {
 					break
 				}
@@ -451,13 +451,44 @@ func parseATADrive(drive *DriveInfo, s SmartctlOutput) {
 		}
 
 		if isTotalLBAsWrittenAttribute(attr.ID, attr.Name) {
-			sectorSize := int64(drive.LogicalSector)
-			if sectorSize == 0 {
-				sectorSize = 512
-			}
-			drive.TotalBytesWritten = attr.Raw.Value * sectorSize
+			drive.TotalBytesWritten = attr.Raw.Value * sectorSize(drive)
 		}
 	}
+
+	// Some firmwares (e.g. HPE-branded Samsung SSDs) omit attribute 241 but
+	// still expose the counter in the ATA Device Statistics log (0x04).
+	if drive.TotalBytesWritten < 0 {
+		if sectors, ok := deviceStatistic(s, devstatGeneralPage, devstatLogicalSectorsWritten); ok {
+			drive.TotalBytesWritten = sectors * sectorSize(drive)
+		}
+	}
+}
+
+// ATA Device Statistics: General Statistics page, Logical Sectors Written offset.
+const (
+	devstatGeneralPage           = 0x01
+	devstatLogicalSectorsWritten = 0x18
+)
+
+func deviceStatistic(s SmartctlOutput, page, offset int) (int64, bool) {
+	for _, p := range s.AtaDeviceStatistics.Pages {
+		if p.Number != page {
+			continue
+		}
+		for _, entry := range p.Table {
+			if entry.Offset == offset && entry.Flags.Valid {
+				return entry.Value, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func sectorSize(drive *DriveInfo) int64 {
+	if drive.LogicalSector == 0 {
+		return 512
+	}
+	return int64(drive.LogicalSector)
 }
 
 func isTotalLBAsWrittenAttribute(id int, name string) bool {

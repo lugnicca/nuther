@@ -125,7 +125,7 @@ type DriveInfo struct {
 	UncorrectableSectors int64
 	CRCErrors            int64
 	WearLevelingValue    int   // Normalized wear value (100=new, 0=worn out), -1 if unavailable
-	TotalBytesWritten   int64 // Total bytes written, -1 if unavailable
+	TotalBytesWritten    int64 // Total bytes written, -1 if unavailable
 
 	Attributes     []SmartAttribute
 	NVMeAttributes []NVMeAttribute
@@ -270,6 +270,20 @@ type SmartctlAtaSmartAttributes struct {
 	Table    []SmartctlAtaAttribute `json:"table"`
 }
 
+// SmartctlAtaDeviceStatistics represents the ATA Device Statistics log (smartctl -l devstat)
+type SmartctlAtaDeviceStatistics struct {
+	Pages []struct {
+		Number int `json:"number"`
+		Table  []struct {
+			Offset int   `json:"offset"`
+			Value  int64 `json:"value"`
+			Flags  struct {
+				Valid bool `json:"valid"`
+			} `json:"flags"`
+		} `json:"table"`
+	} `json:"pages"`
+}
+
 // SmartctlNvmeHealthLog represents NVMe SMART/Health Information
 type SmartctlNvmeHealthLog struct {
 	CriticalWarning         int   `json:"critical_warning"`
@@ -311,19 +325,20 @@ type SmartctlOutput struct {
 		OUI int64 `json:"oui"`
 		ID  int64 `json:"id"`
 	} `json:"wwn"`
-	FirmwareVersion               string                     `json:"firmware_version"`
-	UserCapacity                  SmartctlCapacity           `json:"user_capacity"`
-	LogicalBlockSize              int                        `json:"logical_block_size"`
-	PhysicalBlockSize             int                        `json:"physical_block_size"`
-	RotationRate                  int                        `json:"rotation_rate"`
-	FormFactor                    SmartctlFormFactor         `json:"form_factor"`
-	InSmartctlDatabase            bool                       `json:"in_smartctl_database"`
-	SmartStatus                   SmartctlSmartStatus        `json:"smart_status"`
-	Temperature                   SmartctlTemperature        `json:"temperature"`
-	PowerOnTime                   SmartctlPowerOnTime        `json:"power_on_time"`
-	PowerCycleCount               int64                      `json:"power_cycle_count"`
-	AtaSmartAttributes            SmartctlAtaSmartAttributes `json:"ata_smart_attributes"`
-	NvmeSmartHealthInformationLog SmartctlNvmeHealthLog      `json:"nvme_smart_health_information_log"`
+	FirmwareVersion               string                      `json:"firmware_version"`
+	UserCapacity                  SmartctlCapacity            `json:"user_capacity"`
+	LogicalBlockSize              int                         `json:"logical_block_size"`
+	PhysicalBlockSize             int                         `json:"physical_block_size"`
+	RotationRate                  int                         `json:"rotation_rate"`
+	FormFactor                    SmartctlFormFactor          `json:"form_factor"`
+	InSmartctlDatabase            bool                        `json:"in_smartctl_database"`
+	SmartStatus                   SmartctlSmartStatus         `json:"smart_status"`
+	Temperature                   SmartctlTemperature         `json:"temperature"`
+	PowerOnTime                   SmartctlPowerOnTime         `json:"power_on_time"`
+	PowerCycleCount               int64                       `json:"power_cycle_count"`
+	AtaSmartAttributes            SmartctlAtaSmartAttributes  `json:"ata_smart_attributes"`
+	AtaDeviceStatistics           SmartctlAtaDeviceStatistics `json:"ata_device_statistics"`
+	NvmeSmartHealthInformationLog SmartctlNvmeHealthLog       `json:"nvme_smart_health_information_log"`
 }
 
 // SmartctlScanResult represents the result of smartctl --scan
