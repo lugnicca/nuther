@@ -174,7 +174,9 @@ func scanWithSmartctl() []DriveInfo {
 // mergeScanResults combines two discovery passes by device path. Records from
 // override replace base records for the same path, so a device the retry
 // managed to read is no longer reported as failed; a device known to only one
-// pass is preserved.
+// pass is preserved. Duplicate base paths (e.g. a device the JSON pass listed
+// twice) are coalesced first, so the override always replaces the single entry
+// for that path instead of leaving a stale duplicate behind.
 func mergeScanResults(base, override []DriveInfo) []DriveInfo {
 	if len(base) == 0 {
 		return override
@@ -182,6 +184,10 @@ func mergeScanResults(base, override []DriveInfo) []DriveInfo {
 	index := make(map[string]int, len(base))
 	merged := make([]DriveInfo, 0, len(base)+len(override))
 	for _, drive := range base {
+		if _, ok := index[drive.Device]; ok {
+			slog.Debug("duplicate base device ignored", "device", drive.Device)
+			continue
+		}
 		index[drive.Device] = len(merged)
 		merged = append(merged, drive)
 	}

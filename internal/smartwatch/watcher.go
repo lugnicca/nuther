@@ -99,10 +99,7 @@ func (w *Watcher) snapshotOnce(ctx context.Context, reason string) ([]SnapshotRe
 }
 
 func (w *Watcher) Run(ctx context.Context) error {
-	index, err := w.store.LoadIndex()
-	if err != nil {
-		return err
-	}
+	index, indexErr := w.store.LoadIndex()
 	archived := map[string]bool{}
 	for key := range index.Devices {
 		archived[key] = true
@@ -112,10 +109,16 @@ func (w *Watcher) Run(ctx context.Context) error {
 	published := false
 	if drives, err := w.scanRealDrives(); err != nil {
 		slog.Debug("smart watcher startup scan failed", "error", err)
+		// A corrupt index still surfaces as the startup failure it was before,
+		// but only after the scan was attempted.
+		if indexErr != nil {
+			return indexErr
+		}
 	} else {
 		// Startup archiving and publication are attempted independently, so an
-		// archive failure does not suppress the textfile.
-		var errs []error
+		// archive failure does not suppress the textfile. A corrupt index is
+		// retained as an error but does not gate the scan or the export.
+		errs := []error{indexErr}
 		if err := w.snapshotNewDevices(ctx, seen, archived, true, drives); err != nil {
 			errs = append(errs, err)
 		}
@@ -126,8 +129,8 @@ func (w *Watcher) Run(ctx context.Context) error {
 		if ok {
 			published = true
 		}
-		if len(errs) > 0 {
-			return errors.Join(errs...)
+		if err := errors.Join(errs...); err != nil {
+			return err
 		}
 	}
 

@@ -639,7 +639,8 @@ func TestWatcherRunPollArchiveFailureStillPublishes(t *testing.T) {
 }
 
 // An aggregate of two independent failures must expose both causes, not just
-// the first one.
+// the first one: the archive/store cause and the export cause must both be
+// present, so a duplicated export error cannot pass as a joined pair.
 func TestWatcherSnapshotOnceJoinsArchiveAndExportErrors(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "does-not-exist")
 	watcher := NewWatcher(WatcherConfig{
@@ -660,7 +661,59 @@ func TestWatcherSnapshotOnceJoinsArchiveAndExportErrors(t *testing.T) {
 		t.Fatalf("SnapshotOnce() error = %v, want the export cause visible", err)
 	}
 	var joined interface{ Unwrap() []error }
-	if !errors.As(err, &joined) || len(joined.Unwrap()) < 2 {
+	if !errors.As(err, &joined) {
+		t.Fatalf("SnapshotOnce() error = %v, want joined causes", err)
+	}
+	causes := joined.Unwrap()
+	if len(causes) < 2 {
 		t.Fatalf("SnapshotOnce() error = %v, want both causes joined", err)
+	}
+	var sawArchive, sawExport bool
+	for _, cause := range causes {
+		if errors.Is(cause, os.ErrNotExist) {
+			sawExport = true
+		} else {
+			sawArchive = true
+		}
+	}
+	if !sawArchive || !sawExport {
+		t.Fatalf("SnapshotOnce() error = %v, want distinct archive and export causes (archive=%v export=%v)", err, sawArchive, sawExport)
+	}
+}
+
+// A corrupt index must not gate the scan or the export: the archive error is
+// retained, but smartctl is still invoked and the textfile is still written.
+func TestWatcherRunCorruptIndexStillScansAndPublishes(t *testing.T) {
+	dir := t.TempDir()
+	storeDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(storeDir, "index.json"), []byte("{"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	scans := 0
+	watcher := NewWatcher(WatcherConfig{
+		Store: NewStore(storeDir),
+		Hub:   NewEventHub(""),
+		Scanner: func() ([]smart.DriveInfo, error) {
+			scans++
+			return []smart.DriveInfo{testDrive("/dev/sda", "SN-A")}, nil
+		},
+		Now:         func() time.Time { return time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC) },
+		TextfileDir: dir,
+	})
+
+	err := watcher.Run(t.Context())
+	if err == nil {
+		t.Fatal("Run() error = nil, want the index error retained")
+	}
+	if !strings.Contains(err.Error(), "unexpected end of JSON input") {
+		t.Fatalf("Run() error = %v, want the corrupt-index cause retained", err)
+	}
+	if scans == 0 {
+		t.Fatal("Run() never invoked the scanner")
+	}
+	out := readTextfile(t, dir)
+	if !strings.Contains(out, `nuther_smart_scan_success{device="/dev/sda"`) {
+		t.Fatalf("textfile not published despite the corrupt index:\n%s", out)
 	}
 }

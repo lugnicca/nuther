@@ -967,6 +967,78 @@ func TestScanWithSmartctl_TextRetryKeepsJSONOnlyFailure(t *testing.T) {
 	}
 }
 
+// A device the JSON pass listed twice and failed to read twice must still end
+// up with exactly one record after the textual retry recovers it: the retry's
+// success replaces the base entry rather than leaving a stale duplicate next
+// to it (with a serial) or being dropped in favour of the earlier failure
+// (without one).
+func TestScanWithSmartctl_RetryCoalescesDuplicateBasePaths(t *testing.T) {
+	scanJSON, _ := json.Marshal(SmartctlScanResult{
+		Devices: []struct {
+			Name     string `json:"name"`
+			InfoName string `json:"info_name"`
+			Type     string `json:"type"`
+			Protocol string `json:"protocol"`
+		}{
+			{Name: "/dev/probe-good", Type: "sat", Protocol: "ATA"},
+			{Name: "/dev/probe-good", Type: "sat", Protocol: "ATA"},
+		},
+	})
+
+	for _, tc := range []struct {
+		name       string
+		raw        []byte
+		wantSerial string
+	}{
+		{"with serial", loadTestDataRaw(t, "smartctl_sata_ssd.json"), "S4HNNS0R123456"},
+		{"without serial", withoutSerialNumber(t, loadTestDataRaw(t, "smartctl_sata_ssd.json")), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reads := 0
+			withMockedSmartctl(t, func(args ...string) ([]byte, error) {
+				if args[0] == "--scan" {
+					for _, a := range args {
+						if a == "-j" {
+							return scanJSON, nil
+						}
+					}
+					return []byte("/dev/probe-good -d sat # /dev/probe-good, ATA device\n"), nil
+				}
+				reads++
+				if reads <= 2 {
+					return nil, errors.New("transient detailed-read failure")
+				}
+				return tc.raw, nil
+			})
+
+			drives := scanWithSmartctl()
+			if len(drives) != 1 {
+				t.Fatalf("scanWithSmartctl() = %d records, want exactly one per device path: %+v", len(drives), drives)
+			}
+			if drives[0].ScanError != nil {
+				t.Fatalf("scanWithSmartctl() kept the stale failure: %+v", drives[0])
+			}
+			if drives[0].Serial != tc.wantSerial {
+				t.Fatalf("Serial = %q, want %q", drives[0].Serial, tc.wantSerial)
+			}
+		})
+	}
+}
+
+func withoutSerialNumber(t *testing.T, raw []byte) []byte {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	delete(doc, "serial_number")
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	return out
+}
+
 func TestScanWithSmartctl_AllFail(t *testing.T) {
 	withMockedSmartctl(t, func(args ...string) ([]byte, error) {
 		return nil, errors.New("smartctl not found")
