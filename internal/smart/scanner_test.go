@@ -473,6 +473,69 @@ func TestUpdateHealthStatus_ATA_UncorrectableSectors(t *testing.T) {
 	}
 }
 
+// A drive that reports an attribute failing right now must be BAD even when
+// its own smart_status verdict passed and its aggregate sector counters are
+// clean: the failing attribute is the only evidence, and ignoring it exports a
+// false "healthy" for the exact signal this feature exists to catch. A
+// "past" breach has recovered and must not turn a healthy drive BAD, and the
+// NVMe branch must not bypass the attribute signal.
+func TestUpdateHealthStatus_FailedAttribute(t *testing.T) {
+	failing := []SmartAttribute{{ID: 1, Name: "Raw_Read_Error_Rate", Value: 1, Threshold: 51, WhenFailed: "now"}}
+
+	for _, tc := range []struct {
+		name       string
+		drive      DriveInfo
+		wantHealth HealthStatus
+	}{
+		{"ATA failing now is BAD", DriveInfo{HealthStatus: HealthGood, Attributes: failing}, HealthBad},
+		{"ATA past failure stays GOOD", DriveInfo{HealthStatus: HealthGood, Attributes: []SmartAttribute{{ID: 1, WhenFailed: "past"}}}, HealthGood},
+		{"ATA never failed stays GOOD", DriveInfo{HealthStatus: HealthGood, Attributes: []SmartAttribute{{ID: 9, Value: 99, Threshold: 0}}}, HealthGood},
+		{"explicit BAD is not lowered", DriveInfo{HealthStatus: HealthBad, Attributes: failing}, HealthBad},
+		{"NVMe failing attribute raises past CAUTION to BAD", DriveInfo{IsNVMe: true, HealthStatus: HealthGood, NVMeHealthLog: &NVMeHealthLog{MediaErrors: 5}, Attributes: failing}, HealthBad},
+		{"UNKNOWN stays UNKNOWN despite failing attribute", DriveInfo{HealthStatus: HealthUnknown, Attributes: failing}, HealthUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			drive := tc.drive
+			updateHealthStatus(&drive)
+			if drive.HealthStatus != tc.wantHealth {
+				t.Fatalf("HealthStatus = %q, want %q", drive.HealthStatus, tc.wantHealth)
+			}
+		})
+	}
+}
+
+// The exact reported reproduction: smartctl exits 16 (a warning status) but
+// still prints a full attribute table whose drive verdict passed and whose
+// sector counters are clean, while one attribute is failing now. The drive
+// must be parsed and reported BAD, not GOOD/100.
+func TestGetDriveInfoWithType_FailedAttributeIsBad(t *testing.T) {
+	const raw = `{
+	  "device": {"name": "/dev/probe-failattr", "type": "sat", "protocol": "ATA"},
+	  "model_name": "FAILED ATTR",
+	  "serial_number": "FAILD1",
+	  "rotation_rate": 7200,
+	  "smart_status": {"passed": true},
+	  "ata_smart_attributes": {"table": [
+	    {"id": 1, "name": "Raw_Read_Error_Rate", "value": 1, "worst": 1, "thresh": 51, "when_failed": "now", "raw": {"value": 0, "string": "0"}}
+	  ]}
+	}`
+
+	withMockedSmartctl(t, func(args ...string) ([]byte, error) {
+		return []byte(raw), errors.New("exit status 16")
+	})
+
+	drive, err := GetDriveInfoWithType("/dev/probe-failattr", "sat")
+	if err != nil {
+		t.Fatalf("GetDriveInfoWithType() error = %v, want the usable attribute table accepted", err)
+	}
+	if drive.HealthStatus != HealthBad {
+		t.Fatalf("HealthStatus = %q, want %q", drive.HealthStatus, HealthBad)
+	}
+	if percent := drive.HealthPercent(); percent != 0 {
+		t.Fatalf("HealthPercent() = %d, want 0 for a BAD drive", percent)
+	}
+}
+
 func TestSmartAttributeGetStatus(t *testing.T) {
 	tests := []struct {
 		name     string

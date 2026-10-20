@@ -658,6 +658,23 @@ func updateHealthStatus(drive *DriveInfo) {
 		return
 	}
 
+	// An attribute the drive reports as failing right now (when_failed ==
+	// "now") is a pre-failure signal straight from the firmware: smartctl only
+	// sets it when the attribute has a non-zero threshold and its current
+	// normalized value is at or below it. That is the exact signal this
+	// exporter exists to catch, so it raises a known verdict to BAD. Only
+	// "now" counts, not any non-empty value: smartctl also emits "past" for a
+	// threshold breach whose current value has since recovered, and treating
+	// that as a failure would turn a healthy drive BAD. A healthy drive never
+	// carries "now", so this cannot invent a failure, and severity only moves
+	// up, so it cannot lower an explicit verdict either.
+	for _, attr := range drive.Attributes {
+		if attr.WhenFailed == "now" {
+			raiseHealthStatus(drive, HealthBad)
+			break
+		}
+	}
+
 	if drive.IsNVMe {
 		if drive.NVMeHealthLog == nil {
 			return
