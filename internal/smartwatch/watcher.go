@@ -119,8 +119,13 @@ func (w *Watcher) Run(ctx context.Context) error {
 		// archive failure does not suppress the textfile. A corrupt index is
 		// retained as an error but does not gate the scan or the export.
 		errs := []error{indexErr}
-		if err := w.snapshotNewDevices(ctx, seen, archived, true, drives); err != nil {
-			errs = append(errs, err)
+		// A corrupt index cannot be appended to: SaveSnapshot reloads the same
+		// index and fails with the same parse error, which would report it
+		// twice. Skip the futile archive and report the corrupt index once.
+		if indexErr == nil {
+			if err := w.snapshotNewDevices(ctx, seen, archived, true, drives); err != nil {
+				errs = append(errs, err)
+			}
 		}
 		ok, err := w.publish(drives)
 		if err != nil {

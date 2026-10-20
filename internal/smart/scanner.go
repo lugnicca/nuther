@@ -123,7 +123,7 @@ func scanWithSmartctl() []DriveInfo {
 			// device failed, fall through to the textual retry, which may
 			// recover a transient detailed-read failure.
 			if len(readableDrives(drives)) > 0 {
-				drives = dedupeDrives(drives)
+				drives = dedupeDrives(coalesceByPath(drives))
 				slog.Info("scan complete", "drives", len(drives))
 				return drives
 			}
@@ -169,6 +169,22 @@ func scanWithSmartctl() []DriveInfo {
 		return failed
 	}
 	return dedupeDrives(mergeScanResults(failed, drives))
+}
+
+// coalesceByPath collapses duplicate records for the same device path, letting
+// a successful read replace a failed one for that path. It reuses the retry
+// path's merge semantics so the direct JSON return and the textual retry agree
+// on which record survives for a path.
+func coalesceByPath(drives []DriveInfo) []DriveInfo {
+	var failed, successful []DriveInfo
+	for _, drive := range drives {
+		if drive.ScanError != nil {
+			failed = append(failed, drive)
+		} else {
+			successful = append(successful, drive)
+		}
+	}
+	return mergeScanResults(failed, successful)
 }
 
 // mergeScanResults combines two discovery passes by device path. Records from
@@ -228,16 +244,31 @@ func GetDriveInfo(device string) (DriveInfo, error) {
 	return GetDriveInfoWithType(device, "")
 }
 
-// smartctlOutputUsable reports whether smartctl output contains usable drive
+// smartctlOutputUsable reports whether smartctl output contains actual SMART
 // data even when the command exited non-zero. smartctl returns warning exit
 // statuses (e.g. bit 64: some ATA log structure not read) that are common on
-// USB bridges but still include a full drive identification block.
+// USB bridges but still include a full SMART attribute table. Identification
+// strings alone (model/serial) are not evidence that SMART was read.
 func smartctlOutputUsable(output []byte) bool {
 	var smartOutput SmartctlOutput
 	if err := json.Unmarshal(output, &smartOutput); err != nil {
 		return false
 	}
-	return smartOutput.ModelName != "" || smartOutput.ModelFamily != ""
+	return hasSmartData(smartOutput)
+}
+
+// hasSmartData reports whether the parsed smartctl output actually carries
+// SMART data, as opposed to only the identification block smartctl prints
+// before the read fails. ATA/SATA drives must expose at least one parsed
+// attribute or device-statistics field; NVMe drives must expose a non-zero
+// SMART/Health Information log. smart_status alone is not enough: it is a bare
+// boolean the parser cannot distinguish from an absent field, so a read that
+// failed and left it as a zero value must not pass as healthy.
+func hasSmartData(s SmartctlOutput) bool {
+	if s.Device.Protocol == "NVMe" {
+		return s.NvmeSmartHealthInformationLog != (SmartctlNvmeHealthLog{})
+	}
+	return len(s.AtaSmartAttributes.Table) > 0 || len(s.AtaDeviceStatistics.Pages) > 0
 }
 
 // GetDriveInfoWithType retrieves detailed information for a specific device with optional type
@@ -271,6 +302,12 @@ func GetDriveInfoWithType(device string, deviceType string) (DriveInfo, error) {
 	var smartOutput SmartctlOutput
 	if err := json.Unmarshal(output, &smartOutput); err != nil {
 		return DriveInfo{}, fmt.Errorf("failed to parse smartctl output: %w", err)
+	}
+	// A command that succeeded (or warned) but returned no SMART data must not
+	// surface as a zero-valued healthy drive: the textfile would then claim
+	// scan_success 1 and a fabricated health status.
+	if !hasSmartData(smartOutput) {
+		return DriveInfo{}, fmt.Errorf("smartctl returned no SMART data for %s", device)
 	}
 
 	return parseDriveInfo(device, smartOutput), nil

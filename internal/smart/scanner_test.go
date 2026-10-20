@@ -754,6 +754,60 @@ func TestGetDriveInfoWithType_Exit64FallbackToSat(t *testing.T) {
 	}
 }
 
+// A failed SMART read that still names the model must not be accepted as a
+// successful scan: identification strings (and a bare smart_status boolean)
+// are not SMART data. The record must carry ScanError so the textfile reports
+// scan_success 0 and omits the health/percent samples.
+func TestScanWithSmartctl_FailedReadWithModelIsReportedFailed(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		fixture    string
+		deviceType string
+	}{
+		{"sata", "smartctl_partial_sata.json", "sat"},
+		{"nvme", "smartctl_partial_nvme.json", "nvme"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := loadTestDataRaw(t, tc.fixture)
+			scanJSON, _ := json.Marshal(SmartctlScanResult{
+				Devices: []struct {
+					Name     string `json:"name"`
+					InfoName string `json:"info_name"`
+					Type     string `json:"type"`
+					Protocol string `json:"protocol"`
+				}{
+					{Name: "/dev/probe-partial", Type: tc.deviceType},
+				},
+			})
+			withMockedSmartctl(t, func(args ...string) ([]byte, error) {
+				if args[0] == "--scan" {
+					for _, a := range args {
+						if a == "-j" {
+							return scanJSON, nil
+						}
+					}
+					return []byte("/dev/probe-partial -d " + tc.deviceType + "\n"), nil
+				}
+				return raw, errors.New("exit status 4")
+			})
+
+			drives, err := ScanDrivesIncludingErrors()
+			if err != nil {
+				t.Fatalf("ScanDrivesIncludingErrors() error = %v", err)
+			}
+			if len(drives) != 1 {
+				t.Fatalf("ScanDrivesIncludingErrors() = %+v, want exactly one record", drives)
+			}
+			if drives[0].ScanError == nil {
+				t.Fatalf("ScanDrivesIncludingErrors() = %+v, want the failed read reported, not a healthy drive", drives[0])
+			}
+			if readable := readableDrives(drives); len(readable) != 0 {
+				t.Fatalf("readableDrives() = %+v, want none (the TUI path must not expose it)", readable)
+			}
+		})
+	}
+}
+
 func TestGetDriveInfo(t *testing.T) {
 	sataJSON := loadTestDataRaw(t, "smartctl_sata_ssd.json")
 	withMockedSmartctl(t, func(args ...string) ([]byte, error) {
@@ -1007,6 +1061,64 @@ func TestScanWithSmartctl_RetryCoalescesDuplicateBasePaths(t *testing.T) {
 				reads++
 				if reads <= 2 {
 					return nil, errors.New("transient detailed-read failure")
+				}
+				return tc.raw, nil
+			})
+
+			drives := scanWithSmartctl()
+			if len(drives) != 1 {
+				t.Fatalf("scanWithSmartctl() = %d records, want exactly one per device path: %+v", len(drives), drives)
+			}
+			if drives[0].ScanError != nil {
+				t.Fatalf("scanWithSmartctl() kept the stale failure: %+v", drives[0])
+			}
+			if drives[0].Serial != tc.wantSerial {
+				t.Fatalf("Serial = %q, want %q", drives[0].Serial, tc.wantSerial)
+			}
+		})
+	}
+}
+
+// The direct JSON return must coalesce duplicate device paths too, not only
+// the retry path: when the first detailed read fails and the second succeeds,
+// exactly one record per path must survive and the success must win. With a
+// serial the two identities used to differ and both were kept; without one the
+// earlier failure was kept and the successful read dropped.
+func TestScanWithSmartctl_JSONPassCoalescesDuplicatePaths(t *testing.T) {
+	scanJSON, _ := json.Marshal(SmartctlScanResult{
+		Devices: []struct {
+			Name     string `json:"name"`
+			InfoName string `json:"info_name"`
+			Type     string `json:"type"`
+			Protocol string `json:"protocol"`
+		}{
+			{Name: "/dev/probe-good", Type: "sat", Protocol: "ATA"},
+			{Name: "/dev/probe-good", Type: "sat", Protocol: "ATA"},
+		},
+	})
+
+	for _, tc := range []struct {
+		name       string
+		raw        []byte
+		wantSerial string
+	}{
+		{"with serial", loadTestDataRaw(t, "smartctl_sata_ssd.json"), "S4HNNS0R123456"},
+		{"without serial", withoutSerialNumber(t, loadTestDataRaw(t, "smartctl_sata_ssd.json")), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reads := 0
+			withMockedSmartctl(t, func(args ...string) ([]byte, error) {
+				if args[0] == "--scan" {
+					for _, a := range args {
+						if a == "-j" {
+							return scanJSON, nil
+						}
+					}
+					return nil, errors.New("text scan failed")
+				}
+				reads++
+				if reads == 1 {
+					return nil, errors.New("first detailed read failed")
 				}
 				return tc.raw, nil
 			})

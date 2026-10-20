@@ -1,0 +1,25 @@
+{
+  "json_format_version": [1, 0],
+  "smartctl": {
+    "version": [7, 4],
+    "exit_status": 4
+  },
+  "device": {
+    "name": "/dev/probe-partial",
+    "info_name": "/dev/probe-partial",
+    "type": "nvme",
+    "protocol": "NVMe"
+  },
+  "model_name": "PARTIAL NVME",
+  "serial_number": "PARTIAL",
+  "firmware_version": "1.0",
+  "smart_status": {
+    "passed": true
+  },
+  "messages": [
+    {
+      "string": "Read SMART/Health Information failed: Input/output error",
+      "severity": "error"
+    }
+  ]
+}

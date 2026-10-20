@@ -670,9 +670,10 @@ func TestWatcherSnapshotOnceJoinsArchiveAndExportErrors(t *testing.T) {
 	}
 	var sawArchive, sawExport bool
 	for _, cause := range causes {
-		if errors.Is(cause, os.ErrNotExist) {
+		switch {
+		case errors.Is(cause, os.ErrNotExist):
 			sawExport = true
-		} else {
+		case strings.Contains(cause.Error(), "snapshots"):
 			sawArchive = true
 		}
 	}
@@ -708,6 +709,9 @@ func TestWatcherRunCorruptIndexStillScansAndPublishes(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unexpected end of JSON input") {
 		t.Fatalf("Run() error = %v, want the corrupt-index cause retained", err)
+	}
+	if got := strings.Count(err.Error(), "unexpected end of JSON input"); got != 1 {
+		t.Fatalf("Run() error mentions the parse error %d times, want once: %v", got, err)
 	}
 	if scans == 0 {
 		t.Fatal("Run() never invoked the scanner")
