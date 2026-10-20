@@ -94,6 +94,53 @@ func TestWriteAtomic(t *testing.T) {
 	}
 }
 
+// The textfile collector matches files solely by the .prom suffix, so the
+// scratch file must not carry it or a concurrent scrape could read a
+// half-written file.
+func TestTempFileCannotBeScraped(t *testing.T) {
+	tmp, err := createTemp(t.TempDir())
+	if err != nil {
+		t.Fatalf("createTemp() error = %v", err)
+	}
+	defer tmp.Close()
+	if strings.HasSuffix(filepath.Base(tmp.Name()), ".prom") {
+		t.Fatalf("temp file %q ends in .prom and would be scraped", tmp.Name())
+	}
+}
+
+// A real filesystem failure, not a callback error injected before any I/O.
+func TestWriteFileFilesystemErrors(t *testing.T) {
+	drives := []smart.DriveInfo{ataDrive()}
+	now := time.Unix(1700000000, 0).UTC()
+
+	t.Run("missing directory", func(t *testing.T) {
+		err := WriteFile(filepath.Join(t.TempDir(), "missing"), drives, now)
+		if err == nil {
+			t.Fatal("WriteFile() error = nil, want create failure")
+		}
+	})
+
+	t.Run("target is a directory", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.Mkdir(filepath.Join(dir, FileName), 0o755); err != nil {
+			t.Fatalf("Mkdir() error = %v", err)
+		}
+		err := WriteFile(dir, drives, now)
+		if err == nil {
+			t.Fatal("WriteFile() error = nil, want rename failure")
+		}
+	})
+}
+
+func TestRenderOmitsHealthPercentForUnknown(t *testing.T) {
+	drive := ataDrive()
+	drive.HealthStatus = smart.HealthUnknown
+	out := Render([]smart.DriveInfo{drive}, time.Unix(1700000000, 0).UTC())
+	if strings.Contains(out, "nuther_smart_health_percent{") {
+		t.Fatalf("unknown drive still rendered health_percent:\n%s", out)
+	}
+}
+
 func ataDrive() smart.DriveInfo {
 	return smart.DriveInfo{
 		Device:            "/dev/sda",
@@ -148,8 +195,8 @@ func scanErrorDrive() smart.DriveInfo {
 func headerOnly() string {
 	var b strings.Builder
 	for _, h := range [][2]string{
-		{"nuther_smart_health_status", "Drive health status, one-hot: 1 for the current status label."},
-		{"nuther_smart_health_percent", "Remaining drive life as a percentage (0-100)."},
+		{"nuther_smart_health_status", "Drive health status; 1 for the current status label, other status labels are absent rather than 0."},
+		{"nuther_smart_health_percent", "Remaining drive life as a percentage (0-100); omitted when the drive health is unknown."},
 		{"nuther_smart_temperature_celsius", "Current drive temperature in degrees Celsius."},
 		{"nuther_smart_reallocated_sectors", "Count of reallocated sectors."},
 		{"nuther_smart_pending_sectors", "Count of sectors pending reallocation."},
@@ -173,57 +220,49 @@ func headerOnly() string {
 }
 
 // fullOutput is the Render output for nvmeDrive, ataDrive and scanErrorDrive
-// (sorted by device: nvme0n1, sda, sdb).
+// (sorted by device: nvme0n1, sda, sdb). The scan-error drive only emits
+// scan_success 0; all its other series are absent.
 func fullOutput() string {
 	nvme := `device="/dev/nvme0n1",serial="NVME456",model="Samsung 980",type="NVMe SSD",interface="NVMe"`
 	ata := `device="/dev/sda",serial="ATA123",model="WDC WD10",type="HDD",interface="SATA HDD (7200 RPM)"`
 	bad := `device="/dev/sdb",serial="ERR789",model="Broken",type="SATA SSD",interface="SATA SSD"`
 
-	return `# HELP nuther_smart_health_status Drive health status, one-hot: 1 for the current status label.
+	return `# HELP nuther_smart_health_status Drive health status; 1 for the current status label, other status labels are absent rather than 0.
 # TYPE nuther_smart_health_status gauge
 nuther_smart_health_status{` + nvme + `,status="CAUTION"} 1
 nuther_smart_health_status{` + ata + `,status="GOOD"} 1
-nuther_smart_health_status{` + bad + `,status="UNKNOWN"} 1
-# HELP nuther_smart_health_percent Remaining drive life as a percentage (0-100).
+# HELP nuther_smart_health_percent Remaining drive life as a percentage (0-100); omitted when the drive health is unknown.
 # TYPE nuther_smart_health_percent gauge
 nuther_smart_health_percent{` + nvme + `} 93
 nuther_smart_health_percent{` + ata + `} 100
-nuther_smart_health_percent{` + bad + `} 100
 # HELP nuther_smart_temperature_celsius Current drive temperature in degrees Celsius.
 # TYPE nuther_smart_temperature_celsius gauge
 nuther_smart_temperature_celsius{` + nvme + `} 44
 nuther_smart_temperature_celsius{` + ata + `} 38
-nuther_smart_temperature_celsius{` + bad + `} 0
 # HELP nuther_smart_reallocated_sectors Count of reallocated sectors.
 # TYPE nuther_smart_reallocated_sectors gauge
 nuther_smart_reallocated_sectors{` + nvme + `} 0
 nuther_smart_reallocated_sectors{` + ata + `} 0
-nuther_smart_reallocated_sectors{` + bad + `} 0
 # HELP nuther_smart_pending_sectors Count of sectors pending reallocation.
 # TYPE nuther_smart_pending_sectors gauge
 nuther_smart_pending_sectors{` + nvme + `} 0
 nuther_smart_pending_sectors{` + ata + `} 0
-nuther_smart_pending_sectors{` + bad + `} 0
 # HELP nuther_smart_uncorrectable_sectors Count of offline uncorrectable sectors.
 # TYPE nuther_smart_uncorrectable_sectors gauge
 nuther_smart_uncorrectable_sectors{` + nvme + `} 0
 nuther_smart_uncorrectable_sectors{` + ata + `} 0
-nuther_smart_uncorrectable_sectors{` + bad + `} 0
 # HELP nuther_smart_crc_errors Count of UDMA CRC errors (cable/interface problems).
 # TYPE nuther_smart_crc_errors gauge
 nuther_smart_crc_errors{` + nvme + `} 0
 nuther_smart_crc_errors{` + ata + `} 2
-nuther_smart_crc_errors{` + bad + `} 0
 # HELP nuther_smart_power_on_hours Total power-on hours.
 # TYPE nuther_smart_power_on_hours gauge
 nuther_smart_power_on_hours{` + nvme + `} 999
 nuther_smart_power_on_hours{` + ata + `} 1234
-nuther_smart_power_on_hours{` + bad + `} 0
 # HELP nuther_smart_power_cycles Total power cycles.
 # TYPE nuther_smart_power_cycles gauge
 nuther_smart_power_cycles{` + nvme + `} 12
 nuther_smart_power_cycles{` + ata + `} 56
-nuther_smart_power_cycles{` + bad + `} 0
 # HELP nuther_smart_wear_leveling_value Normalized wear leveling value (100 new, 0 worn out); omitted when unavailable.
 # TYPE nuther_smart_wear_leveling_value gauge
 # HELP nuther_smart_written_bytes_total Total bytes written; omitted when unavailable.
@@ -233,7 +272,6 @@ nuther_smart_written_bytes_total{` + nvme + `} 123456789
 # TYPE nuther_smart_snapshot_timestamp_seconds gauge
 nuther_smart_snapshot_timestamp_seconds{` + nvme + `} 1700000000
 nuther_smart_snapshot_timestamp_seconds{` + ata + `} 1700000000
-nuther_smart_snapshot_timestamp_seconds{` + bad + `} 1700000000
 # HELP nuther_smart_scan_success 1 when the drive scan succeeded, 0 when this drive's scan errored.
 # TYPE nuther_smart_scan_success gauge
 nuther_smart_scan_success{` + nvme + `} 1

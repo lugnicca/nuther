@@ -17,6 +17,17 @@ func WriteFile(dir string, drives []smart.DriveInfo, now time.Time) error {
 	})
 }
 
+// tempPattern deliberately does not end in ".prom": the textfile collector
+// matches files solely by that suffix, so a half-written temp file with it
+// could be scraped mid-rename. The fleet's own writer uses the same approach.
+const tempPattern = ".nuther-smart-*.tmp"
+
+// createTemp opens a scratch file in dir whose name cannot be scraped by the
+// textfile collector.
+func createTemp(dir string) (*os.File, error) {
+	return os.CreateTemp(dir, tempPattern)
+}
+
 // writeAtomic writes the bytes produced by render to path atomically. render is
 // called before the temp file is created, so a render error leaves path as-is.
 func writeAtomic(path string, render func() ([]byte, error)) error {
@@ -25,7 +36,7 @@ func writeAtomic(path string, render func() ([]byte, error)) error {
 		return err
 	}
 
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".nuther-smart-*.prom")
+	tmp, err := createTemp(filepath.Dir(path))
 	if err != nil {
 		return err
 	}

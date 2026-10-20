@@ -2,6 +2,7 @@ package smartwatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -33,7 +34,7 @@ type WatcherConfig struct {
 func NewWatcher(cfg WatcherConfig) *Watcher {
 	scanner := cfg.Scanner
 	if scanner == nil {
-		scanner = smart.ScanDrives
+		scanner = smart.ScanDrivesIncludingErrors
 	}
 	now := cfg.Now
 	if now == nil {
@@ -58,13 +59,20 @@ func (w *Watcher) SnapshotOnce(ctx context.Context, reason string) ([]SnapshotRe
 
 	var records []SnapshotRecord
 	for _, drive := range drives {
+		if drive.ScanError != nil {
+			// Unreadable drives have no SMART data to archive; the textfile
+			// reports them with scan_success 0 instead.
+			continue
+		}
 		record, err := w.saveAndPublish(ctx, reason, drive)
 		if err != nil {
 			return records, err
 		}
 		records = append(records, record)
 	}
-	return records, nil
+	// Publication is separate from archiving: an export failure still returns
+	// an error (so --once exits non-zero) without losing the snapshots above.
+	return records, w.publish(drives)
 }
 
 func (w *Watcher) Run(ctx context.Context) error {
@@ -78,10 +86,16 @@ func (w *Watcher) Run(ctx context.Context) error {
 	}
 
 	seen := map[string]bool{}
+	published := false
 	if drives, err := w.scanRealDrives(); err != nil {
 		slog.Debug("smart watcher startup scan failed", "error", err)
-	} else if err := w.snapshotNewDevices(ctx, seen, archived, true, drives); err != nil {
-		return err
+	} else {
+		if err := w.snapshotNewDevices(ctx, seen, archived, true, drives); err != nil {
+			return err
+		}
+		if err := w.publish(drives); err == nil {
+			published = true
+		}
 	}
 
 	pollTicker := time.NewTicker(w.pollInterval)
@@ -98,25 +112,40 @@ func (w *Watcher) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			// A textfile that was never published is a failure the fleet's
+			// freshness alerting must not read as success.
+			if w.textfileDir != "" && !published {
+				return errors.New("smart textfile was never published")
+			}
 			return ctx.Err()
 		case <-pollTicker.C:
-			if err := w.detectNewDevices(ctx, seen, archived, false); err != nil {
+			drives, err := w.detectNewDevices(ctx, seen, archived, false)
+			if err != nil {
 				slog.Debug("smart watcher scan failed", "error", err)
+				continue
+			}
+			if err := w.publish(drives); err == nil {
+				published = true
 			}
 		case <-snapshotC:
 			if _, err := w.SnapshotOnce(ctx, ReasonInterval); err != nil {
 				slog.Debug("smart interval snapshot failed", "error", err)
+				continue
 			}
+			published = true
 		}
 	}
 }
 
-func (w *Watcher) detectNewDevices(ctx context.Context, seen map[string]bool, archived map[string]bool, startup bool) error {
+func (w *Watcher) detectNewDevices(ctx context.Context, seen map[string]bool, archived map[string]bool, startup bool) ([]smart.DriveInfo, error) {
 	drives, err := w.scanRealDrives()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return w.snapshotNewDevices(ctx, seen, archived, startup, drives)
+	if err := w.snapshotNewDevices(ctx, seen, archived, startup, drives); err != nil {
+		return nil, err
+	}
+	return drives, nil
 }
 
 func (w *Watcher) snapshotNewDevices(ctx context.Context, seen map[string]bool, archived map[string]bool, startup bool, drives []smart.DriveInfo) error {
@@ -128,6 +157,9 @@ func (w *Watcher) snapshotNewDevices(ctx context.Context, seen map[string]bool, 
 			continue
 		}
 		if startup && archived[key] {
+			continue
+		}
+		if drive.ScanError != nil {
 			continue
 		}
 		reason := ReasonNewDevice
@@ -163,14 +195,36 @@ func (w *Watcher) scanRealDrives() ([]smart.DriveInfo, error) {
 	if len(realDrives) == 0 {
 		return nil, fmt.Errorf("no non-demo drives detected")
 	}
-	// Write after every successful scan, so the textfile's mtime is a live
-	// freshness marker. A failed write leaves the previous file untouched.
-	if w.textfileDir != "" {
-		if err := promtext.WriteFile(w.textfileDir, realDrives, w.now()); err != nil {
-			return nil, err
+	return realDrives, nil
+}
+
+// publish atomically replaces the textfile. A run with no successfully scanned
+// drive leaves the previous file untouched, so its mtime stays a truthful
+// freshness marker. It logs and returns the export error so callers can report
+// it without suppressing snapshot saving.
+func (w *Watcher) publish(drives []smart.DriveInfo) error {
+	if w.textfileDir == "" {
+		return nil
+	}
+	if !hasSuccessfulDrive(drives) {
+		err := fmt.Errorf("no successfully scanned drive; textfile left untouched")
+		slog.Error("smart textfile export skipped", "error", err)
+		return err
+	}
+	if err := promtext.WriteFile(w.textfileDir, drives, w.now()); err != nil {
+		slog.Error("smart textfile export failed", "error", err)
+		return err
+	}
+	return nil
+}
+
+func hasSuccessfulDrive(drives []smart.DriveInfo) bool {
+	for _, drive := range drives {
+		if drive.ScanError == nil {
+			return true
 		}
 	}
-	return realDrives, nil
+	return false
 }
 
 func (w *Watcher) saveAndPublish(ctx context.Context, reason string, drive smart.DriveInfo) (SnapshotRecord, error) {

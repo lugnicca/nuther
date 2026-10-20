@@ -873,6 +873,68 @@ func TestScanWithSmartctl_AllFail(t *testing.T) {
 	}
 }
 
+func TestScanWithSmartctl_PreservesFailedDevices(t *testing.T) {
+	sataJSON := loadTestDataRaw(t, "smartctl_sata_ssd.json")
+	scanJSON, _ := json.Marshal(SmartctlScanResult{
+		Devices: []struct {
+			Name     string `json:"name"`
+			InfoName string `json:"info_name"`
+			Type     string `json:"type"`
+			Protocol string `json:"protocol"`
+		}{
+			{Name: "/dev/sda", Type: "sat", Protocol: "ATA"},
+			{Name: "/dev/sdb", Type: "sat", Protocol: "ATA"},
+		},
+	})
+
+	withMockedSmartctl(t, func(args ...string) ([]byte, error) {
+		for _, a := range args {
+			if a == "--scan" {
+				return scanJSON, nil
+			}
+			if a == "/dev/sdb" {
+				return nil, errors.New("smartctl failed")
+			}
+		}
+		return sataJSON, nil
+	})
+
+	drives := scanWithSmartctl()
+	failed := false
+	for _, drive := range drives {
+		if drive.Device == "/dev/sdb" && drive.ScanError != nil {
+			failed = true
+		}
+	}
+	if !failed {
+		t.Fatalf("scanWithSmartctl() dropped the failed device: %+v", drives)
+	}
+
+	readable, err := ScanDrives()
+	if err != nil {
+		t.Fatalf("ScanDrives() error = %v", err)
+	}
+	for _, drive := range readable {
+		if drive.Device == "/dev/sdb" {
+			t.Fatal("ScanDrives() exposed the failed device to the TUI")
+		}
+	}
+
+	withErrors, err := ScanDrivesIncludingErrors()
+	if err != nil {
+		t.Fatalf("ScanDrivesIncludingErrors() error = %v", err)
+	}
+	kept := false
+	for _, drive := range withErrors {
+		if drive.Device == "/dev/sdb" && drive.ScanError != nil {
+			kept = true
+		}
+	}
+	if !kept {
+		t.Fatalf("ScanDrivesIncludingErrors() = %+v, want the failed device kept", withErrors)
+	}
+}
+
 func TestScanCommonDevices(t *testing.T) {
 	sataJSON := loadTestDataRaw(t, "smartctl_sata_ssd.json")
 	callCount := 0

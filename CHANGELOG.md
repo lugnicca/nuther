@@ -11,8 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `nuther watch-smart --textfile <dir>` writes a Prometheus textfile
   (`nuther-smart.prom`) after every successful scan, atomically, for the
-  node_exporter / Alloy textfile collector. When nothing can be scanned the run
-  exits non-zero and the previous file is left untouched.
+  node_exporter / Alloy textfile collector. The output directory must already
+  exist. When nothing can be scanned, or no drive can be read successfully, the
+  run exits non-zero and the previous file is left untouched; in continuous
+  mode the daemon exits non-zero on shutdown when the file was never
+  successfully published. A disk whose own scan errored is still reported with
+  `nuther_smart_scan_success 0` and no other series.
 
 ## [0.1.0] - 2025-01-01
 

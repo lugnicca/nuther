@@ -18,6 +18,7 @@ import (
 
 	"nuther/internal/config"
 	"nuther/internal/platform"
+	"nuther/internal/smart"
 	"nuther/internal/smartwatch"
 	"nuther/internal/ui"
 	"nuther/internal/ui/components"
@@ -180,6 +181,10 @@ func printStartupWarning() {
 	_, _ = fmt.Scanln(&input)
 }
 
+// scanDrives is the drive scanner used by watch-smart. It is a variable so
+// tests can inject a deterministic scanner.
+var scanDrives = smart.ScanDrivesIncludingErrors
+
 func runSmartWatcher(name string, args []string) error {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
@@ -244,6 +249,7 @@ func runSmartWatcher(name string, args []string) error {
 	watcher := smartwatch.NewWatcher(smartwatch.WatcherConfig{
 		Store:            store,
 		Hub:              hub,
+		Scanner:          scanDrives,
 		PollInterval:     *interval,
 		SnapshotInterval: *snapshotInterval,
 		TextfileDir:      *textfileDir,

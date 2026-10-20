@@ -21,6 +21,8 @@ type family struct {
 	value func(smart.DriveInfo) (int64, bool)
 	// extra appends additional labels to the base label set (e.g. status).
 	extra func(smart.DriveInfo) string
+	// scanErrorOnly marks families still emitted for a drive whose scan failed.
+	scanErrorOnly bool
 }
 
 // Render returns the Prometheus text exposition for the given drives.
@@ -38,7 +40,7 @@ func Render(drives []smart.DriveInfo, now time.Time) string {
 	families := []family{
 		{
 			name:  "nuther_smart_health_status",
-			help:  "Drive health status, one-hot: 1 for the current status label.",
+			help:  "Drive health status; 1 for the current status label, other status labels are absent rather than 0.",
 			typ:   "gauge",
 			value: func(smart.DriveInfo) (int64, bool) { return 1, true },
 			extra: func(d smart.DriveInfo) string {
@@ -46,10 +48,15 @@ func Render(drives []smart.DriveInfo, now time.Time) string {
 			},
 		},
 		{
-			name:  "nuther_smart_health_percent",
-			help:  "Remaining drive life as a percentage (0-100).",
-			typ:   "gauge",
-			value: func(d smart.DriveInfo) (int64, bool) { return int64(d.HealthPercent()), true },
+			name: "nuther_smart_health_percent",
+			help: "Remaining drive life as a percentage (0-100); omitted when the drive health is unknown.",
+			typ:  "gauge",
+			value: func(d smart.DriveInfo) (int64, bool) {
+				if d.ScanError != nil || d.HealthStatus == smart.HealthUnknown || d.HealthStatus == "" {
+					return 0, false
+				}
+				return int64(d.HealthPercent()), true
+			},
 		},
 		{
 			name:  "nuther_smart_temperature_celsius",
@@ -81,6 +88,8 @@ func Render(drives []smart.DriveInfo, now time.Time) string {
 			typ:   "gauge",
 			value: func(d smart.DriveInfo) (int64, bool) { return d.CRCErrors, true },
 		},
+		// Power-on hours and cycles are lifetime totals, not monotonic event
+		// counters: a replaced drive resets them, so they stay gauges.
 		{
 			name:  "nuther_smart_power_on_hours",
 			help:  "Total power-on hours.",
@@ -131,6 +140,7 @@ func Render(drives []smart.DriveInfo, now time.Time) string {
 				}
 				return 1, true
 			},
+			scanErrorOnly: true,
 		},
 	}
 
@@ -139,6 +149,11 @@ func Render(drives []smart.DriveInfo, now time.Time) string {
 		fmt.Fprintf(&b, "# HELP %s %s\n", f.name, f.help)
 		fmt.Fprintf(&b, "# TYPE %s %s\n", f.name, f.typ)
 		for _, d := range sorted {
+			// A drive that could not be read gets only scan_success 0; every
+			// other series would be fabricated, so it is absent.
+			if d.ScanError != nil && !f.scanErrorOnly {
+				continue
+			}
 			value, ok := f.value(d)
 			if !ok {
 				continue

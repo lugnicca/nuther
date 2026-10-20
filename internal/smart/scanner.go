@@ -23,9 +23,25 @@ var runSmartctl = func(args ...string) ([]byte, error) {
 }
 
 // ScanDrives discovers and retrieves information for all available drives.
-// Returns demo data with a non-nil error when no real drives are detected.
+// Devices whose detailed read failed are omitted, so the TUI only shows
+// readable drives. Returns demo data with a non-nil error when no real drives
+// are detected.
 func ScanDrives() ([]DriveInfo, error) {
+	return scanDrives(false)
+}
+
+// ScanDrivesIncludingErrors is ScanDrives but keeps devices whose detailed read
+// failed as records carrying ScanError, so monitors can report a failing disk
+// instead of letting it silently disappear.
+func ScanDrivesIncludingErrors() ([]DriveInfo, error) {
+	return scanDrives(true)
+}
+
+func scanDrives(includeErrors bool) ([]DriveInfo, error) {
 	drives := scanWithSmartctl()
+	if !includeErrors {
+		drives = readableDrives(drives)
+	}
 	if len(drives) > 0 {
 		return drives, nil
 	}
@@ -36,6 +52,17 @@ func ScanDrives() ([]DriveInfo, error) {
 	}
 
 	return CreateDemoData(), fmt.Errorf("no drives detected, using demo data")
+}
+
+// readableDrives drops records whose detailed read failed.
+func readableDrives(drives []DriveInfo) []DriveInfo {
+	out := make([]DriveInfo, 0, len(drives))
+	for _, drive := range drives {
+		if drive.ScanError == nil {
+			out = append(out, drive)
+		}
+	}
+	return out
 }
 
 func dedupeDrives(drives []DriveInfo) []DriveInfo {
@@ -82,6 +109,8 @@ func scanWithSmartctl() []DriveInfo {
 				drive, err := GetDriveInfoWithType(device.Name, device.Type)
 				if err != nil {
 					slog.Debug("failed to get drive info", "device", device.Name, "error", err)
+					// Keep the device identity so monitors can report scan_success 0.
+					drives = append(drives, DriveInfo{Device: device.Name, ScanError: err})
 				} else if drive.Model != "" {
 					drives = append(drives, drive)
 				}
@@ -120,6 +149,8 @@ func scanWithSmartctl() []DriveInfo {
 			drive, err := GetDriveInfoWithType(devicePath, deviceType)
 			if err != nil {
 				slog.Debug("failed to get drive info", "device", devicePath, "error", err)
+				// Keep the device identity so monitors can report scan_success 0.
+				drives = append(drives, DriveInfo{Device: devicePath, ScanError: err})
 			} else if drive.Model != "" {
 				drives = append(drives, drive)
 			}
