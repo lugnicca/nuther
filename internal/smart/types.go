@@ -225,9 +225,11 @@ type SmartctlFormFactor struct {
 	Name     string `json:"name"`
 }
 
-// SmartctlSmartStatus represents SMART overall health status
+// SmartctlSmartStatus represents SMART overall health status. Passed is a
+// pointer because smartctl omits the field when the status command failed:
+// absent means unknown, not failed.
 type SmartctlSmartStatus struct {
-	Passed bool `json:"passed"`
+	Passed *bool `json:"passed"`
 }
 
 // SmartctlTemperature represents temperature information

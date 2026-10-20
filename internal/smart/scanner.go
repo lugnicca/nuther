@@ -190,14 +190,11 @@ func coalesceByPath(drives []DriveInfo) []DriveInfo {
 // mergeScanResults combines two discovery passes by device path. Records from
 // override replace base records for the same path, so a device the retry
 // managed to read is no longer reported as failed; a device known to only one
-// pass is preserved. Duplicate base paths (e.g. a device the JSON pass listed
-// twice) are coalesced first, so the override always replaces the single entry
-// for that path instead of leaving a stale duplicate behind.
+// pass is preserved. Duplicate paths are coalesced within each pass too (the
+// later record wins), including when base is empty, so one device path can
+// never export two contradictory samples.
 func mergeScanResults(base, override []DriveInfo) []DriveInfo {
-	if len(base) == 0 {
-		return override
-	}
-	index := make(map[string]int, len(base))
+	index := make(map[string]int, len(base)+len(override))
 	merged := make([]DriveInfo, 0, len(base)+len(override))
 	for _, drive := range base {
 		if _, ok := index[drive.Device]; ok {
@@ -260,15 +257,31 @@ func smartctlOutputUsable(output []byte) bool {
 // hasSmartData reports whether the parsed smartctl output actually carries
 // SMART data, as opposed to only the identification block smartctl prints
 // before the read fails. ATA/SATA drives must expose at least one parsed
-// attribute or device-statistics field; NVMe drives must expose a non-zero
-// SMART/Health Information log. smart_status alone is not enough: it is a bare
-// boolean the parser cannot distinguish from an absent field, so a read that
-// failed and left it as a zero value must not pass as healthy.
+// attribute or one valid device-statistics entry; NVMe drives must expose a
+// non-zero SMART/Health Information log. A statistics page header is metadata
+// printed before its entries, and an entry whose valid flag is false has no
+// value, so neither counts as a measurement. smart_status alone is not enough
+// either: it is a verdict, not a measurement, so a read that failed and left
+// only that field behind must not pass as healthy.
 func hasSmartData(s SmartctlOutput) bool {
 	if s.Device.Protocol == "NVMe" {
 		return s.NvmeSmartHealthInformationLog != (SmartctlNvmeHealthLog{})
 	}
-	return len(s.AtaSmartAttributes.Table) > 0 || len(s.AtaDeviceStatistics.Pages) > 0
+	return len(s.AtaSmartAttributes.Table) > 0 || hasValidDeviceStatistic(s)
+}
+
+// hasValidDeviceStatistic reports whether the ATA Device Statistics log holds
+// at least one entry smartctl marked valid. Invalid entries omit their value,
+// so a page that only lists metadata or invalid entries carries no measurement.
+func hasValidDeviceStatistic(s SmartctlOutput) bool {
+	for _, page := range s.AtaDeviceStatistics.Pages {
+		for _, entry := range page.Table {
+			if entry.Flags.Valid {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // GetDriveInfoWithType retrieves detailed information for a specific device with optional type
@@ -345,15 +358,21 @@ func parseDriveInfo(device string, s SmartctlOutput) DriveInfo {
 		PowerCycles:       s.PowerCycleCount,
 		SmartSupported:    true,
 		SmartEnabled:      true,
-		HealthPassed:      s.SmartStatus.Passed,
+		HealthPassed:      s.SmartStatus.Passed != nil && *s.SmartStatus.Passed,
 		WearLevelingValue: -1,
 		TotalBytesWritten: -1,
 		LastUpdate:        time.Now(),
 	}
 
-	if s.SmartStatus.Passed {
+	// smart_status is absent when the status command failed; an absent field is
+	// not a failed verdict. Only an explicit false means the drive reported
+	// failure, and anything else leaves the health unknown.
+	switch {
+	case s.SmartStatus.Passed == nil:
+		drive.HealthStatus = HealthUnknown
+	case *s.SmartStatus.Passed:
 		drive.HealthStatus = HealthGood
-	} else {
+	default:
 		drive.HealthStatus = HealthBad
 	}
 

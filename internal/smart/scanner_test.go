@@ -1137,6 +1137,216 @@ func TestScanWithSmartctl_JSONPassCoalescesDuplicatePaths(t *testing.T) {
 	}
 }
 
+// A device-statistics page header is metadata smartctl prints before the
+// entries, and an entry whose valid flag is false carries no value: neither
+// is a SMART measurement, so neither may satisfy the "usable data" criterion.
+func TestHasSmartData_DeviceStatisticsNeedsValidEntry(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		json string
+		want bool
+	}{
+		{
+			name: "page header only",
+			json: `{"device":{"protocol":"ATA"},"ata_device_statistics":{"pages":[{"number":1,"name":"General Statistics","revision":1}]}}`,
+			want: false,
+		},
+		{
+			name: "invalid entry",
+			json: `{"device":{"protocol":"ATA"},"ata_device_statistics":{"pages":[{"number":1,"table":[{"offset":24,"flags":{"valid":false}}]}]}}`,
+			want: false,
+		},
+		{
+			name: "valid entry",
+			json: `{"device":{"protocol":"ATA"},"ata_device_statistics":{"pages":[{"number":1,"table":[{"offset":24,"value":42,"flags":{"valid":true}}]}]}}`,
+			want: true,
+		},
+		{
+			name: "attribute table",
+			json: `{"device":{"protocol":"ATA"},"ata_smart_attributes":{"table":[{"id":9,"name":"Power_On_Hours"}]}}`,
+			want: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var s SmartctlOutput
+			if err := json.Unmarshal([]byte(tc.json), &s); err != nil {
+				t.Fatalf("Unmarshal() error = %v", err)
+			}
+			if got := hasSmartData(s); got != tc.want {
+				t.Fatalf("hasSmartData() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// A failed read that still prints the device-statistics page header (or an
+// invalid entry) must be reported failed: accepting it would export
+// health_status BAD/0 and scan_success 1 for a drive whose read failed.
+func TestGetDriveInfoWithType_RejectsStatisticsWithoutEntries(t *testing.T) {
+	const headerOnly = `{
+	  "device": {"name": "/dev/probe-page", "type": "sat", "protocol": "ATA"},
+	  "model_name": "PAGE HEADER ONLY",
+	  "serial_number": "PAGEONLY",
+	  "smart_status": {"passed": true},
+	  "ata_device_statistics": {"pages": [{"number": 1, "name": "General Statistics", "revision": 1}]}
+	}`
+	const invalidEntry = `{
+	  "device": {"name": "/dev/probe-page", "type": "sat", "protocol": "ATA"},
+	  "model_name": "INVALID ENTRY",
+	  "serial_number": "INVALID",
+	  "smart_status": {"passed": true},
+	  "ata_device_statistics": {"pages": [{"number": 1, "table": [{"offset": 24, "flags": {"valid": false}}]}]}
+	}`
+	const validEntry = `{
+	  "device": {"name": "/dev/probe-page", "type": "sat", "protocol": "ATA"},
+	  "model_name": "VALID ENTRY",
+	  "serial_number": "VALID",
+	  "rotation_rate": 7200,
+	  "ata_device_statistics": {"pages": [{"number": 1, "table": [{"offset": 24, "value": 42, "flags": {"valid": true}}]}]}
+	}`
+
+	for _, tc := range []struct {
+		name    string
+		raw     string
+		wantErr bool
+	}{
+		{"page header only", headerOnly, true},
+		{"invalid entry", invalidEntry, true},
+		{"valid entry", validEntry, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			withMockedSmartctl(t, func(args ...string) ([]byte, error) {
+				return []byte(tc.raw), errors.New("exit status 4")
+			})
+			drive, err := GetDriveInfoWithType("/dev/probe-page", "sat")
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("GetDriveInfoWithType() = %+v, want rejection of a header-only/invalid read", drive)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetDriveInfoWithType() error = %v, want a usable device-statistics entry accepted", err)
+			}
+		})
+	}
+}
+
+// Two successful reads of the same path must coalesce to one record even when
+// no read failed: the direct JSON return used to bypass path coalescing, so
+// both identities survived and the textfile exported two contradictory
+// health_status samples for one device path.
+func TestScanWithSmartctl_JSONPassCoalescesTwoSuccessfulPaths(t *testing.T) {
+	scanJSON, _ := json.Marshal(SmartctlScanResult{
+		Devices: []struct {
+			Name     string `json:"name"`
+			InfoName string `json:"info_name"`
+			Type     string `json:"type"`
+			Protocol string `json:"protocol"`
+		}{
+			{Name: "/dev/probe-dup", Type: "sat", Protocol: "ATA"},
+			{Name: "/dev/probe-dup", Type: "sat", Protocol: "ATA"},
+		},
+	})
+
+	good := loadTestDataRaw(t, "smartctl_sata_ssd.json")
+	bad := withoutSerialAndFailedHealth(t, loadTestDataRaw(t, "smartctl_sata_ssd.json"))
+
+	reads := 0
+	withMockedSmartctl(t, func(args ...string) ([]byte, error) {
+		if args[0] == "--scan" {
+			for _, a := range args {
+				if a == "-j" {
+					return scanJSON, nil
+				}
+			}
+			return nil, errors.New("text scan failed")
+		}
+		reads++
+		if reads == 1 {
+			return good, nil
+		}
+		return bad, nil
+	})
+
+	drives := scanWithSmartctl()
+	if len(drives) != 1 {
+		t.Fatalf("scanWithSmartctl() = %d records, want exactly one per device path: %+v", len(drives), drives)
+	}
+	if drives[0].Device != "/dev/probe-dup" {
+		t.Fatalf("Device = %q, want /dev/probe-dup", drives[0].Device)
+	}
+}
+
+// smart_status is absent when the status command failed, and an absent field is
+// not a failed verdict. A drive that still yields a usable attribute is
+// accepted, but its health must stay UNKNOWN so the textfile omits
+// health_percent instead of inventing BAD/0. An explicit false still means BAD.
+func TestGetDriveInfoWithType_AbsentSmartStatusStaysUnknown(t *testing.T) {
+	const attrOnly = `{
+	  "device": {"name": "/dev/probe-attr", "type": "sat", "protocol": "ATA"},
+	  "model_name": "ATTRIBUTE ONLY",
+	  "serial_number": "ATTRONLY",
+	  "rotation_rate": 7200,
+	  "power_on_time": {"hours": 42},
+	  "ata_smart_attributes": {"table": [{"id": 9, "name": "Power_On_Hours", "value": 99, "worst": 99, "thresh": 0, "raw": {"value": 42, "string": "42"}}]}
+	}`
+	const passedFalse = `{
+	  "device": {"name": "/dev/probe-attr", "type": "sat", "protocol": "ATA"},
+	  "model_name": "EXPLICIT FALSE",
+	  "serial_number": "FALSE",
+	  "rotation_rate": 7200,
+	  "smart_status": {"passed": false},
+	  "ata_smart_attributes": {"table": [{"id": 9, "name": "Power_On_Hours", "value": 99, "worst": 99, "thresh": 0, "raw": {"value": 42, "string": "42"}}]}
+	}`
+	const passedTrue = `{
+	  "device": {"name": "/dev/probe-attr", "type": "sat", "protocol": "ATA"},
+	  "model_name": "EXPLICIT TRUE",
+	  "serial_number": "TRUE",
+	  "rotation_rate": 7200,
+	  "smart_status": {"passed": true},
+	  "ata_smart_attributes": {"table": [{"id": 9, "name": "Power_On_Hours", "value": 99, "worst": 99, "thresh": 0, "raw": {"value": 42, "string": "42"}}]}
+	}`
+
+	for _, tc := range []struct {
+		name       string
+		raw        string
+		wantHealth HealthStatus
+	}{
+		{"absent passed", attrOnly, HealthUnknown},
+		{"explicit false", passedFalse, HealthBad},
+		{"explicit true", passedTrue, HealthGood},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			withMockedSmartctl(t, func(args ...string) ([]byte, error) {
+				return []byte(tc.raw), errors.New("exit status 4")
+			})
+			drive, err := GetDriveInfoWithType("/dev/probe-attr", "sat")
+			if err != nil {
+				t.Fatalf("GetDriveInfoWithType() error = %v, want the usable attribute accepted", err)
+			}
+			if drive.HealthStatus != tc.wantHealth {
+				t.Fatalf("HealthStatus = %q, want %q", drive.HealthStatus, tc.wantHealth)
+			}
+		})
+	}
+}
+
+func withoutSerialAndFailedHealth(t *testing.T, raw []byte) []byte {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	delete(doc, "serial_number")
+	doc["smart_status"] = map[string]any{"passed": false}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	return out
+}
+
 func withoutSerialNumber(t *testing.T, raw []byte) []byte {
 	t.Helper()
 	var doc map[string]any

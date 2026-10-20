@@ -156,6 +156,32 @@ func TestRenderOmitsHealthPercentForUnknown(t *testing.T) {
 	}
 }
 
+// A drive whose status command failed still yields a usable attribute, so it is
+// exported; but with smart_status absent its health is unknown, not failed, so
+// the textfile must say UNKNOWN and omit health_percent rather than invent
+// BAD/0. This exercises the parse -> render path end to end.
+func TestRenderAttributeOnlyDriveStaysUnknown(t *testing.T) {
+	raw := []byte(`{
+	  "device": {"name": "/dev/probe-attr", "type": "sat", "protocol": "ATA"},
+	  "model_name": "ATTRIBUTE ONLY",
+	  "serial_number": "ATTRONLY",
+	  "rotation_rate": 7200,
+	  "power_on_time": {"hours": 42},
+	  "ata_smart_attributes": {"table": [{"id": 9, "name": "Power_On_Hours", "value": 99, "worst": 99, "thresh": 0, "raw": {"value": 42, "string": "42"}}]}
+	}`)
+	drive, err := smart.ParseSmartctlDriveJSON(raw)
+	if err != nil {
+		t.Fatalf("ParseSmartctlDriveJSON() error = %v", err)
+	}
+	out := Render([]smart.DriveInfo{drive}, time.Unix(1700000000, 0).UTC())
+	if !strings.Contains(out, `nuther_smart_health_status{`) || !strings.Contains(out, `status="UNKNOWN"`) {
+		t.Fatalf("attribute-only drive did not export UNKNOWN health:\n%s", out)
+	}
+	if strings.Contains(out, "nuther_smart_health_percent{") {
+		t.Fatalf("unknown drive still rendered health_percent:\n%s", out)
+	}
+}
+
 func ataDrive() smart.DriveInfo {
 	return smart.DriveInfo{
 		Device:            "/dev/sda",
