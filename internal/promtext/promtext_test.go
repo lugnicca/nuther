@@ -182,6 +182,55 @@ func TestRenderAttributeOnlyDriveStaysUnknown(t *testing.T) {
 	}
 }
 
+// The drive's own smart_status verdict outranks any attribute-derived caution,
+// and severity never moves down. An explicit passed:false with sector errors
+// stays BAD; an absent verdict with the same errors stays UNKNOWN with
+// health_percent omitted; only a genuinely passed:true drive may be raised to
+// CAUTION by its counters.
+func TestRenderHealthStatusPrecedence(t *testing.T) {
+	noDefect := `{"id": 9, "name": "Power_On_Hours", "value": 99, "worst": 99, "thresh": 0, "raw": {"value": 42, "string": "42"}}`
+	reallocated := `{"id": 5, "name": "Reallocated_Sector_Ct", "value": 100, "worst": 100, "thresh": 10, "raw": {"value": 1, "string": "1"}}`
+	fixture := func(smartStatus, attrs string) []byte {
+		return []byte(`{"device": {"name": "/dev/probe", "type": "sat", "protocol": "ATA"},
+		  "model_name": "PRECEDENCE", "serial_number": "PREC", "rotation_rate": 7200,
+		  ` + smartStatus + `"ata_smart_attributes": {"table": [` + attrs + `]}}`)
+	}
+
+	for _, tc := range []struct {
+		name        string
+		raw         []byte
+		wantStatus  string
+		wantPercent bool
+		wantValue   string
+	}{
+		{"explicit false with sector errors stays BAD", fixture(`"smart_status": {"passed": false},`, reallocated), "BAD", true, "0"},
+		{"absent verdict with sector errors stays UNKNOWN", fixture(``, reallocated), "UNKNOWN", false, ""},
+		{"passed true with sector errors is CAUTION", fixture(`"smart_status": {"passed": true},`, reallocated), "CAUTION", true, "50"},
+		{"passed true healthy is GOOD", fixture(`"smart_status": {"passed": true},`, noDefect), "GOOD", true, "100"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			drive, err := smart.ParseSmartctlDriveJSON(tc.raw)
+			if err != nil {
+				t.Fatalf("ParseSmartctlDriveJSON() error = %v", err)
+			}
+			out := Render([]smart.DriveInfo{drive}, time.Unix(1700000000, 0).UTC())
+			if !strings.Contains(out, `status="`+tc.wantStatus+`"`) {
+				t.Fatalf("health status = %q, want %q:\n%s", drive.HealthStatus, tc.wantStatus, out)
+			}
+			hasPercent := strings.Contains(out, "nuther_smart_health_percent{")
+			if hasPercent != tc.wantPercent {
+				t.Fatalf("health_percent present = %v, want %v:\n%s", hasPercent, tc.wantPercent, out)
+			}
+			if tc.wantPercent {
+				want := `nuther_smart_health_percent{device="/dev/probe",serial="PREC",model="PRECEDENCE",type="HDD",interface="SATA HDD (7200 RPM)"} ` + tc.wantValue
+				if !strings.Contains(out, want) {
+					t.Fatalf("health_percent sample = want %q:\n%s", want, out)
+				}
+			}
+		})
+	}
+}
+
 func ataDrive() smart.DriveInfo {
 	return smart.DriveInfo{
 		Device:            "/dev/sda",

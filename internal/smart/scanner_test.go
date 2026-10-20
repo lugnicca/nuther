@@ -1166,6 +1166,11 @@ func TestHasSmartData_DeviceStatisticsNeedsValidEntry(t *testing.T) {
 			json: `{"device":{"protocol":"ATA"},"ata_smart_attributes":{"table":[{"id":9,"name":"Power_On_Hours"}]}}`,
 			want: true,
 		},
+		{
+			name: "null attribute",
+			json: `{"device":{"protocol":"ATA"},"ata_smart_attributes":{"table":[null]}}`,
+			want: false,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var s SmartctlOutput
@@ -1204,6 +1209,17 @@ func TestGetDriveInfoWithType_RejectsStatisticsWithoutEntries(t *testing.T) {
 	  "rotation_rate": 7200,
 	  "ata_device_statistics": {"pages": [{"number": 1, "table": [{"offset": 24, "value": 42, "flags": {"valid": true}}]}]}
 	}`
+	// A JSON null in the attribute table is not an object with an id/name, so
+	// it is not a measurement: accepting it would export scan_success 1 and a
+	// fabricated GOOD/100 for a drive with no SMART data at all.
+	const nullAttribute = `{
+	  "device": {"name": "/dev/probe-null", "type": "sat", "protocol": "ATA"},
+	  "model_name": "NULL ATTRIBUTE",
+	  "serial_number": "NULLATTR",
+	  "rotation_rate": 7200,
+	  "smart_status": {"passed": true},
+	  "ata_smart_attributes": {"table": [null]}
+	}`
 
 	for _, tc := range []struct {
 		name    string
@@ -1212,6 +1228,7 @@ func TestGetDriveInfoWithType_RejectsStatisticsWithoutEntries(t *testing.T) {
 	}{
 		{"page header only", headerOnly, true},
 		{"invalid entry", invalidEntry, true},
+		{"null attribute", nullAttribute, true},
 		{"valid entry", validEntry, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

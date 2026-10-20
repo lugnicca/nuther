@@ -267,7 +267,20 @@ func hasSmartData(s SmartctlOutput) bool {
 	if s.Device.Protocol == "NVMe" {
 		return s.NvmeSmartHealthInformationLog != (SmartctlNvmeHealthLog{})
 	}
-	return len(s.AtaSmartAttributes.Table) > 0 || hasValidDeviceStatistic(s)
+	for _, attr := range s.AtaSmartAttributes.Table {
+		if isValidAtaAttribute(attr) {
+			return true
+		}
+	}
+	return hasValidDeviceStatistic(s)
+}
+
+// isValidAtaAttribute reports whether a table entry is a real attribute rather
+// than a JSON null. A null entry unmarshals to a zero-valued struct with
+// neither id nor name, so it carries no measurement and must not count as
+// SMART data.
+func isValidAtaAttribute(attr SmartctlAtaAttribute) bool {
+	return attr.ID != 0 || attr.Name != ""
 }
 
 // hasValidDeviceStatistic reports whether the ATA Device Statistics log holds
@@ -534,6 +547,9 @@ func buildNVMeAttributes(nvme SmartctlNvmeHealthLog) []NVMeAttribute {
 // parseATADrive parses ATA/SATA-specific information
 func parseATADrive(drive *DriveInfo, s SmartctlOutput) {
 	for _, attr := range s.AtaSmartAttributes.Table {
+		if !isValidAtaAttribute(attr) {
+			continue
+		}
 		smartAttr := SmartAttribute{
 			ID:         attr.ID,
 			Name:       attr.Name,
@@ -629,28 +645,54 @@ func isTotalLBAsWrittenAttribute(id int, name string) bool {
 	return normalizedName == "totallbaswritten"
 }
 
-// updateHealthStatus updates the drive health status based on critical attributes.
+// updateHealthStatus raises the drive health status based on critical
+// attributes. Severity only ever moves up (GOOD -> CAUTION -> BAD): the drive's
+// own smart_status verdict, set by the caller before this runs, outranks any
+// attribute-derived caution and is never lowered. UNKNOWN is not on that scale
+// and is returned untouched: when the overall verdict is missing the drive
+// stays UNKNOWN so the textfile keeps omitting health_percent. Sector errors on
+// such a drive are still reflected by the reallocated/pending/uncorrectable
+// counter series, without a health verdict and without a percentage.
 func updateHealthStatus(drive *DriveInfo) {
+	if drive.HealthStatus == HealthUnknown || drive.HealthStatus == "" {
+		return
+	}
+
 	if drive.IsNVMe {
-		if drive.NVMeHealthLog != nil {
-			if drive.NVMeHealthLog.CriticalWarning > 0 {
-				drive.HealthStatus = HealthBad
-				return
-			}
-			if drive.NVMeHealthLog.MediaErrors > 0 || drive.NVMeHealthLog.PercentageUsed > NVMeHealthPercentageUsedCaution {
-				drive.HealthStatus = HealthCaution
-				return
-			}
-		}
-	} else {
-		if drive.ReallocatedSectors > ReallocatedSectorsBadThreshold || drive.UncorrectableSectors > UncorrectableSectorsBadThreshold {
-			drive.HealthStatus = HealthBad
+		if drive.NVMeHealthLog == nil {
 			return
 		}
-		if drive.ReallocatedSectors > 0 || drive.PendingSectors > 0 ||
-			drive.UncorrectableSectors > 0 {
-			drive.HealthStatus = HealthCaution
-			return
+		if drive.NVMeHealthLog.CriticalWarning > 0 {
+			raiseHealthStatus(drive, HealthBad)
+		} else if drive.NVMeHealthLog.MediaErrors > 0 || drive.NVMeHealthLog.PercentageUsed > NVMeHealthPercentageUsedCaution {
+			raiseHealthStatus(drive, HealthCaution)
 		}
+		return
+	}
+
+	switch {
+	case drive.ReallocatedSectors > ReallocatedSectorsBadThreshold || drive.UncorrectableSectors > UncorrectableSectorsBadThreshold:
+		raiseHealthStatus(drive, HealthBad)
+	case drive.ReallocatedSectors > 0 || drive.PendingSectors > 0 || drive.UncorrectableSectors > 0:
+		raiseHealthStatus(drive, HealthCaution)
+	}
+}
+
+// raiseHealthStatus applies status only when it is more severe than the current
+// one, so an attribute-derived caution cannot downgrade an explicit BAD.
+func raiseHealthStatus(drive *DriveInfo, status HealthStatus) {
+	if healthSeverity(status) > healthSeverity(drive.HealthStatus) {
+		drive.HealthStatus = status
+	}
+}
+
+func healthSeverity(status HealthStatus) int {
+	switch status {
+	case HealthBad:
+		return 2
+	case HealthCaution:
+		return 1
+	default:
+		return 0
 	}
 }
