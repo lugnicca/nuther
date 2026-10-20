@@ -129,6 +129,7 @@ Flags:
 | `--store` | `~/.config/nuther/smart-snapshots` | JSON snapshot archive directory |
 | `--listen` | `127.0.0.1:0` | Local HTTP address for event and snapshot routes |
 | `--webhook-url` | empty | Optional outbound webhook URL for snapshot events |
+| `--textfile` | empty | Directory for the Prometheus textfile output; disabled when empty |
 | `--once` | `false` | Take one manual snapshot and exit |
 
 On startup, the watcher prints:
@@ -138,6 +139,42 @@ On startup, the watcher prints:
 - `GET /snapshots/{id}` returns a specific archived S.M.A.R.T. snapshot.
 
 Snapshots are stored as browsable JSON files under `snapshots/` with an `index.json` alongside them.
+
+### Prometheus textfile
+
+`watch-smart --textfile <dir>` writes `<dir>/nuther-smart.prom` after every
+successful scan, for scraping by the node_exporter / Alloy textfile collector:
+
+```bash
+sudo ./nuther watch-smart --once --textfile /var/lib/node_exporter/textfile_collector
+```
+
+The file is replaced atomically (temp file in the same directory, `0644`, then
+rename), so readers never see a partial file. If a run cannot scan any drive it
+exits non-zero and leaves the previous file untouched — the file's mtime is the
+job-freshness marker. A disk whose own scan errored is still reported, with
+`nuther_smart_scan_success 0`.
+
+Exposed series (one label set per disk: `device`, `serial`, `model`, `type`,
+`interface`):
+
+| Metric | Description |
+|--------|-------------|
+| `nuther_smart_health_status{status="..."}` | One-hot current status: `GOOD`, `INFO`, `CAUTION`, `BAD` or `UNKNOWN` |
+| `nuther_smart_health_percent` | Remaining drive life (0-100) |
+| `nuther_smart_temperature_celsius` | Current temperature |
+| `nuther_smart_reallocated_sectors` | Reallocated sectors |
+| `nuther_smart_pending_sectors` | Sectors pending reallocation |
+| `nuther_smart_uncorrectable_sectors` | Offline uncorrectable sectors |
+| `nuther_smart_crc_errors` | UDMA CRC errors (cable/interface) |
+| `nuther_smart_power_on_hours` | Power-on hours |
+| `nuther_smart_power_cycles` | Power cycles |
+| `nuther_smart_wear_leveling_value` | Normalized wear value (omitted when unavailable) |
+| `nuther_smart_written_bytes_total` | Total bytes written (omitted when unavailable) |
+| `nuther_smart_snapshot_timestamp_seconds` | Timestamp of the snapshot pass |
+| `nuther_smart_scan_success` | `1` normally, `0` when that disk's scan errored |
+
+No `host` label is added; Alloy's `external_labels` supplies it.
 
 ### Screenshot directory
 

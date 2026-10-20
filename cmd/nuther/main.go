@@ -194,6 +194,7 @@ func runSmartWatcher(name string, args []string) error {
 	storePath := flags.String("store", defaultStore, "snapshot store directory")
 	listenAddr := flags.String("listen", "127.0.0.1:0", "HTTP listen address for events and snapshot retrieval")
 	webhookURL := flags.String("webhook-url", "", "optional outbound webhook URL for snapshot events")
+	textfileDir := flags.String("textfile", "", "directory for the Prometheus textfile output; disabled when empty")
 	once := flags.Bool("once", false, "take one manual snapshot of detected drives and exit")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -245,6 +246,7 @@ func runSmartWatcher(name string, args []string) error {
 		Hub:              hub,
 		PollInterval:     *interval,
 		SnapshotInterval: *snapshotInterval,
+		TextfileDir:      *textfileDir,
 	})
 
 	if *once {

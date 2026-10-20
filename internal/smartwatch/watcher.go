@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"nuther/internal/promtext"
 	"nuther/internal/smart"
 )
 
@@ -16,6 +17,7 @@ type Watcher struct {
 	pollInterval     time.Duration
 	snapshotInterval time.Duration
 	now              func() time.Time
+	textfileDir      string
 }
 
 type WatcherConfig struct {
@@ -25,6 +27,7 @@ type WatcherConfig struct {
 	PollInterval     time.Duration
 	SnapshotInterval time.Duration
 	Now              func() time.Time
+	TextfileDir      string
 }
 
 func NewWatcher(cfg WatcherConfig) *Watcher {
@@ -43,6 +46,7 @@ func NewWatcher(cfg WatcherConfig) *Watcher {
 		pollInterval:     cfg.PollInterval,
 		snapshotInterval: cfg.SnapshotInterval,
 		now:              now,
+		textfileDir:      cfg.TextfileDir,
 	}
 }
 
@@ -158,6 +162,13 @@ func (w *Watcher) scanRealDrives() ([]smart.DriveInfo, error) {
 	}
 	if len(realDrives) == 0 {
 		return nil, fmt.Errorf("no non-demo drives detected")
+	}
+	// Write after every successful scan, so the textfile's mtime is a live
+	// freshness marker. A failed write leaves the previous file untouched.
+	if w.textfileDir != "" {
+		if err := promtext.WriteFile(w.textfileDir, realDrives, w.now()); err != nil {
+			return nil, err
+		}
 	}
 	return realDrives, nil
 }
