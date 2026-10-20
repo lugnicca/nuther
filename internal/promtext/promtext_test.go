@@ -95,16 +95,31 @@ func TestWriteAtomic(t *testing.T) {
 }
 
 // The textfile collector matches files solely by the .prom suffix, so the
-// scratch file must not carry it or a concurrent scrape could read a
-// half-written file.
+// scratch file created by writeAtomic must not carry it or a concurrent
+// scrape could read a half-written file.
 func TestTempFileCannotBeScraped(t *testing.T) {
-	tmp, err := createTemp(t.TempDir())
-	if err != nil {
-		t.Fatalf("createTemp() error = %v", err)
+	var created string
+	orig := createTemp
+	createTemp = func(dir string) (*os.File, error) {
+		f, err := orig(dir)
+		if err == nil {
+			created = f.Name()
+		}
+		return f, err
 	}
-	defer tmp.Close()
-	if strings.HasSuffix(filepath.Base(tmp.Name()), ".prom") {
-		t.Fatalf("temp file %q ends in .prom and would be scraped", tmp.Name())
+	t.Cleanup(func() { createTemp = orig })
+
+	dir := t.TempDir()
+	if err := writeAtomic(filepath.Join(dir, FileName), func() ([]byte, error) {
+		return []byte("x\n"), nil
+	}); err != nil {
+		t.Fatalf("writeAtomic() error = %v", err)
+	}
+	if created == "" {
+		t.Fatal("writeAtomic() did not create a scratch file through createTemp")
+	}
+	if strings.HasSuffix(filepath.Base(created), ".prom") {
+		t.Fatalf("temp file %q ends in .prom and would be scraped", created)
 	}
 }
 

@@ -23,8 +23,9 @@ func WriteFile(dir string, drives []smart.DriveInfo, now time.Time) error {
 const tempPattern = ".nuther-smart-*.tmp"
 
 // createTemp opens a scratch file in dir whose name cannot be scraped by the
-// textfile collector.
-func createTemp(dir string) (*os.File, error) {
+// textfile collector. It is a variable so a test can observe the name
+// writeAtomic actually creates.
+var createTemp = func(dir string) (*os.File, error) {
 	return os.CreateTemp(dir, tempPattern)
 }
 

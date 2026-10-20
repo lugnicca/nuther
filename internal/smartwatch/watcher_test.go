@@ -353,8 +353,60 @@ func TestWatcherNoDrivesLeavesFileUntouched(t *testing.T) {
 	}
 }
 
+// An entirely unreadable fleet must fail SnapshotOnce even when no textfile is
+// configured: success requires at least one readable drive.
+func TestWatcherSnapshotOnceAllUnreadableWithoutTextfileFails(t *testing.T) {
+	watcher := NewWatcher(WatcherConfig{
+		Store: NewStore(t.TempDir()),
+		Hub:   NewEventHub(""),
+		Scanner: func() ([]smart.DriveInfo, error) {
+			return []smart.DriveInfo{failedDrive("/dev/sdb")}, nil
+		},
+	})
+
+	records, err := watcher.SnapshotOnce(t.Context(), ReasonManual)
+	if err == nil {
+		t.Fatal("SnapshotOnce() error = nil, want failure when no drive is readable")
+	}
+	if len(records) != 0 {
+		t.Fatalf("records = %d, want 0", len(records))
+	}
+}
+
+// Archiving and publication are independent: a snapshot-store failure must not
+// stop the textfile from being published, and the error must still be returned.
+func TestWatcherSnapshotOnceArchiveFailureStillPublishes(t *testing.T) {
+	dir := t.TempDir()
+	storeFile := filepath.Join(t.TempDir(), "store-is-a-file")
+	if err := os.WriteFile(storeFile, []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	watcher := NewWatcher(WatcherConfig{
+		Store: NewStore(storeFile),
+		Hub:   NewEventHub(""),
+		Scanner: func() ([]smart.DriveInfo, error) {
+			return []smart.DriveInfo{testDrive("/dev/sda", "SN-A")}, nil
+		},
+		Now:         func() time.Time { return time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC) },
+		TextfileDir: dir,
+	})
+
+	_, err := watcher.SnapshotOnce(t.Context(), ReasonManual)
+	if err == nil {
+		t.Fatal("SnapshotOnce() error = nil, want archive failure")
+	}
+	out := readTextfile(t, dir)
+	if !strings.Contains(out, `nuther_smart_scan_success{device="/dev/sda"`) {
+		t.Fatalf("textfile not published despite archive failure:\n%s", out)
+	}
+}
+
 func TestWatcherTextfileDisabled(t *testing.T) {
 	dir := t.TempDir()
+	// With no TextfileDir the watcher must not write anything, not even into
+	// the process working directory where an empty dir would resolve.
+	t.Chdir(dir)
 	watcher := NewWatcher(WatcherConfig{
 		Store: NewStore(t.TempDir()),
 		Hub:   NewEventHub(""),

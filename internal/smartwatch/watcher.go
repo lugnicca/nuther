@@ -58,6 +58,7 @@ func (w *Watcher) SnapshotOnce(ctx context.Context, reason string) ([]SnapshotRe
 	}
 
 	var records []SnapshotRecord
+	var errs []error
 	for _, drive := range drives {
 		if drive.ScanError != nil {
 			// Unreadable drives have no SMART data to archive; the textfile
@@ -66,13 +67,23 @@ func (w *Watcher) SnapshotOnce(ctx context.Context, reason string) ([]SnapshotRe
 		}
 		record, err := w.saveAndPublish(ctx, reason, drive)
 		if err != nil {
-			return records, err
+			errs = append(errs, err)
+			continue
 		}
 		records = append(records, record)
 	}
-	// Publication is separate from archiving: an export failure still returns
-	// an error (so --once exits non-zero) without losing the snapshots above.
-	return records, w.publish(drives)
+
+	// Success requires at least one readable drive whether or not a textfile
+	// is configured.
+	if !hasSuccessfulDrive(drives) {
+		errs = append(errs, errors.New("no readable drive detected"))
+	}
+
+	// Archiving and publication are independent in both directions: a save
+	// failure must not suppress the export, and an export failure must not
+	// suppress the saves above. Both errors are returned.
+	errs = append(errs, w.publish(drives))
+	return records, errors.Join(errs...)
 }
 
 func (w *Watcher) Run(ctx context.Context) error {

@@ -862,6 +862,53 @@ func TestScanWithSmartctl_TextFallback(t *testing.T) {
 	}
 }
 
+// A transient detailed-read failure must not skip the textual discovery
+// retry: the fallback decision is based on usable drives, not on records that
+// carry an error.
+func TestScanWithSmartctl_RetriesTextDiscoveryWhenAllReadsFail(t *testing.T) {
+	sataJSON := loadTestDataRaw(t, "smartctl_sata_ssd.json")
+	scanJSON, _ := json.Marshal(SmartctlScanResult{
+		Devices: []struct {
+			Name     string `json:"name"`
+			InfoName string `json:"info_name"`
+			Type     string `json:"type"`
+			Protocol string `json:"protocol"`
+		}{
+			{Name: "/dev/disk99", Type: "sat", Protocol: "ATA"},
+		},
+	})
+
+	reads := 0
+	withMockedSmartctl(t, func(args ...string) ([]byte, error) {
+		if args[0] == "--scan" {
+			for _, a := range args {
+				if a == "-j" {
+					return scanJSON, nil
+				}
+			}
+			return []byte("/dev/disk99 -d sat # /dev/disk99, ATA device\n"), nil
+		}
+		// Only the transiently-failing disk ever returns data; the common-path
+		// fallback keeps failing, so demo data would mean the retry was skipped.
+		if !strings.Contains(strings.Join(args, " "), "/dev/disk99") {
+			return nil, errors.New("device not found")
+		}
+		reads++
+		if reads == 1 {
+			return nil, errors.New("transient detailed-read failure")
+		}
+		return sataJSON, nil
+	})
+
+	drives, err := ScanDrives()
+	if err != nil {
+		t.Fatalf("ScanDrives() error = %v, want the recovered disk", err)
+	}
+	if len(drives) != 1 || drives[0].Device != "/dev/disk99" || drives[0].IsDemo {
+		t.Fatalf("ScanDrives() = %+v, want readable /dev/disk99", drives)
+	}
+}
+
 func TestScanWithSmartctl_AllFail(t *testing.T) {
 	withMockedSmartctl(t, func(args ...string) ([]byte, error) {
 		return nil, errors.New("smartctl not found")

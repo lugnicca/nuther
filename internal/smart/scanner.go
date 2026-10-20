@@ -96,6 +96,10 @@ func driveIdentityKey(drive DriveInfo) string {
 
 // scanWithSmartctl uses smartctl --scan to discover drives
 func scanWithSmartctl() []DriveInfo {
+	// Devices whose detailed read failed during JSON discovery, kept so a
+	// monitor still sees them when the textual retry cannot recover them.
+	var failed []DriveInfo
+
 	output, err := runSmartctl("--scan", "-j")
 	if err != nil {
 		slog.Debug("smartctl --scan -j failed", "error", err)
@@ -115,18 +119,22 @@ func scanWithSmartctl() []DriveInfo {
 					drives = append(drives, drive)
 				}
 			}
-			if len(drives) > 0 {
+			// The fallback decision counts usable drives only: when every
+			// device failed, fall through to the textual retry, which may
+			// recover a transient detailed-read failure.
+			if len(readableDrives(drives)) > 0 {
 				drives = dedupeDrives(drives)
 				slog.Info("scan complete", "drives", len(drives))
 				return drives
 			}
+			failed = drives
 		}
 	}
 
 	output, err = runSmartctl("--scan")
 	if err != nil {
 		slog.Debug("smartctl --scan failed", "error", err)
-		return nil
+		return failed
 	}
 
 	var drives []DriveInfo
@@ -157,6 +165,9 @@ func scanWithSmartctl() []DriveInfo {
 		}
 	}
 
+	if len(drives) == 0 {
+		return failed
+	}
 	return dedupeDrives(drives)
 }
 
