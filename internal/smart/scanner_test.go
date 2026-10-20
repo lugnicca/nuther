@@ -909,6 +909,64 @@ func TestScanWithSmartctl_RetriesTextDiscoveryWhenAllReadsFail(t *testing.T) {
 	}
 }
 
+// A device the JSON pass could not read must survive the textual retry when
+// the retry only lists some devices: the retry recovers what it can without
+// dropping the failures only JSON knew about.
+func TestScanWithSmartctl_TextRetryKeepsJSONOnlyFailure(t *testing.T) {
+	sataJSON := loadTestDataRaw(t, "smartctl_sata_ssd.json")
+	scanJSON, _ := json.Marshal(SmartctlScanResult{
+		Devices: []struct {
+			Name     string `json:"name"`
+			InfoName string `json:"info_name"`
+			Type     string `json:"type"`
+			Protocol string `json:"protocol"`
+		}{
+			{Name: "/dev/disk98", Type: "sat", Protocol: "ATA"},
+			{Name: "/dev/disk99", Type: "sat", Protocol: "ATA"},
+		},
+	})
+
+	reads := 0
+	withMockedSmartctl(t, func(args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if args[0] == "--scan" {
+			for _, a := range args {
+				if a == "-j" {
+					return scanJSON, nil
+				}
+			}
+			// The textual pass only ever learns about /dev/disk99.
+			return []byte("/dev/disk99 -d sat # /dev/disk99, ATA device\n"), nil
+		}
+		switch {
+		case strings.Contains(joined, "/dev/disk98"):
+			return nil, errors.New("disk98 read failed")
+		case strings.Contains(joined, "/dev/disk99"):
+			reads++
+			if reads == 1 {
+				return nil, errors.New("disk99 transient read failure")
+			}
+			return sataJSON, nil
+		}
+		return nil, errors.New("device not found")
+	})
+
+	drives := scanWithSmartctl()
+	byDevice := map[string]DriveInfo{}
+	for _, drive := range drives {
+		byDevice[drive.Device] = drive
+	}
+	if _, ok := byDevice["/dev/disk98"]; !ok {
+		t.Fatalf("scanWithSmartctl() dropped the JSON-only failure: %+v", drives)
+	}
+	if byDevice["/dev/disk98"].ScanError == nil {
+		t.Fatalf("/dev/disk98 = %+v, want the failed read preserved", byDevice["/dev/disk98"])
+	}
+	if got := byDevice["/dev/disk99"]; got.ScanError != nil {
+		t.Fatalf("/dev/disk99 = %+v, want the retry's successful read", got)
+	}
+}
+
 func TestScanWithSmartctl_AllFail(t *testing.T) {
 	withMockedSmartctl(t, func(args ...string) ([]byte, error) {
 		return nil, errors.New("smartctl not found")

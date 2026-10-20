@@ -525,3 +525,142 @@ func TestWatcherRunWithoutTextfileCancelsCleanly(t *testing.T) {
 		t.Fatalf("Run() error = %v, want context.Canceled", err)
 	}
 }
+
+// blockedSnapshotStore returns a store whose "snapshots" path is a regular
+// file, so every SaveSnapshot fails while LoadIndex keeps working.
+func blockedSnapshotStore(t *testing.T) *Store {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "snapshots"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	return NewStore(dir)
+}
+
+func waitForTextfile(t *testing.T, dir string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(filepath.Join(dir, promtext.FileName))
+		if err == nil && strings.Contains(string(data), `nuther_smart_scan_success{device="/dev/sda"`) {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("textfile was never published")
+}
+
+// An interval snapshot can publish the textfile and still return an archive
+// error through errors.Join. The final "never published" verdict must follow
+// publication, not the aggregate error.
+func TestWatcherRunPublishedDespiteArchiveError(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	scans := 0
+	watcher := NewWatcher(WatcherConfig{
+		Store:            blockedSnapshotStore(t),
+		Hub:              NewEventHub(""),
+		PollInterval:     time.Hour,
+		SnapshotInterval: 5 * time.Millisecond,
+		Scanner: func() ([]smart.DriveInfo, error) {
+			scans++
+			if scans == 1 {
+				return nil, errors.New("startup discovery failed")
+			}
+			return []smart.DriveInfo{testDrive("/dev/sda", "SN-A")}, nil
+		},
+		Now:         func() time.Time { return time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC) },
+		TextfileDir: dir,
+	})
+
+	done := make(chan error, 1)
+	go func() { done <- watcher.Run(ctx) }()
+
+	waitForTextfile(t, dir)
+	cancel()
+
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v, want context.Canceled (the textfile was published)", err)
+	}
+}
+
+// The startup archive failure must not suppress the startup export.
+func TestWatcherRunStartupArchiveFailureStillPublishes(t *testing.T) {
+	dir := t.TempDir()
+	watcher := NewWatcher(WatcherConfig{
+		Store: blockedSnapshotStore(t),
+		Hub:   NewEventHub(""),
+		Scanner: func() ([]smart.DriveInfo, error) {
+			return []smart.DriveInfo{testDrive("/dev/sda", "SN-A")}, nil
+		},
+		Now:         func() time.Time { return time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC) },
+		TextfileDir: dir,
+	})
+
+	if err := watcher.Run(t.Context()); err == nil {
+		t.Fatal("Run() error = nil, want the archive failure")
+	}
+	readTextfile(t, dir)
+}
+
+// The polling archive failure must not suppress the periodic export.
+func TestWatcherRunPollArchiveFailureStillPublishes(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	scans := 0
+	watcher := NewWatcher(WatcherConfig{
+		Store:        blockedSnapshotStore(t),
+		Hub:          NewEventHub(""),
+		PollInterval: 5 * time.Millisecond,
+		Scanner: func() ([]smart.DriveInfo, error) {
+			scans++
+			if scans == 1 {
+				return nil, errors.New("startup discovery failed")
+			}
+			return []smart.DriveInfo{testDrive("/dev/sda", "SN-A")}, nil
+		},
+		Now:         func() time.Time { return time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC) },
+		TextfileDir: dir,
+	})
+
+	done := make(chan error, 1)
+	go func() { done <- watcher.Run(ctx) }()
+
+	waitForTextfile(t, dir)
+	cancel()
+
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v, want context.Canceled (the textfile was published)", err)
+	}
+}
+
+// An aggregate of two independent failures must expose both causes, not just
+// the first one.
+func TestWatcherSnapshotOnceJoinsArchiveAndExportErrors(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "does-not-exist")
+	watcher := NewWatcher(WatcherConfig{
+		Store: blockedSnapshotStore(t),
+		Hub:   NewEventHub(""),
+		Scanner: func() ([]smart.DriveInfo, error) {
+			return []smart.DriveInfo{testDrive("/dev/sda", "SN-A")}, nil
+		},
+		Now:         func() time.Time { return time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC) },
+		TextfileDir: dir,
+	})
+
+	_, err := watcher.SnapshotOnce(t.Context(), ReasonManual)
+	if err == nil {
+		t.Fatal("SnapshotOnce() error = nil, want both failures")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("SnapshotOnce() error = %v, want the export cause visible", err)
+	}
+	var joined interface{ Unwrap() []error }
+	if !errors.As(err, &joined) || len(joined.Unwrap()) < 2 {
+		t.Fatalf("SnapshotOnce() error = %v, want both causes joined", err)
+	}
+}

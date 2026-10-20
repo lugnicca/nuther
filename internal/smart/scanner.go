@@ -168,7 +168,32 @@ func scanWithSmartctl() []DriveInfo {
 	if len(drives) == 0 {
 		return failed
 	}
-	return dedupeDrives(drives)
+	return dedupeDrives(mergeScanResults(failed, drives))
+}
+
+// mergeScanResults combines two discovery passes by device path. Records from
+// override replace base records for the same path, so a device the retry
+// managed to read is no longer reported as failed; a device known to only one
+// pass is preserved.
+func mergeScanResults(base, override []DriveInfo) []DriveInfo {
+	if len(base) == 0 {
+		return override
+	}
+	index := make(map[string]int, len(base))
+	merged := make([]DriveInfo, 0, len(base)+len(override))
+	for _, drive := range base {
+		index[drive.Device] = len(merged)
+		merged = append(merged, drive)
+	}
+	for _, drive := range override {
+		if i, ok := index[drive.Device]; ok {
+			merged[i] = drive
+			continue
+		}
+		index[drive.Device] = len(merged)
+		merged = append(merged, drive)
+	}
+	return merged
 }
 
 // scanCommonDevices checks common device paths for drives
