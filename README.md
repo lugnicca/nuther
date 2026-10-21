@@ -130,7 +130,7 @@ Flags:
 | `--listen` | `127.0.0.1:0` | Local HTTP address for event and snapshot routes |
 | `--webhook-url` | empty | Optional outbound webhook URL for snapshot events |
 | `--textfile` | empty | Directory for the Prometheus textfile output; disabled when empty |
-| `--report-log` | empty | Path to append one full JSON report line per measured drive; disabled when empty |
+| `--report-log` | empty | Path to append a full JSON report line per archived drive; disabled when empty |
 | `--once` | `false` | Take one manual snapshot and exit |
 
 On startup, the watcher prints:
@@ -187,23 +187,37 @@ No `host` label is added; Alloy's `external_labels` supplies it.
 ### JSON report log
 
 `watch-smart --report-log <file>` appends one compact JSON object per line for
-each drive that was actually measured in the scan — the same object the
-snapshot archive stores (`id`, `timestamp`, `reason`, `device`, `smart`, with
-the full ATA attribute table or NVMe health log):
+each drive that was archived in the scan — the same object the snapshot archive
+stores (`id`, `timestamp`, `reason`, `device`, `smart`, with the full ATA
+attribute table or NVMe health log):
 
 ```bash
 sudo ./nuther watch-smart --once --report-log /var/lib/nuther/smart-reports.jsonl
 ```
 
-Each line is written with a single `O_APPEND` write, so a reader (for example
-Alloy's file tailer) never sees a partial line. A scan that measured nothing
-appends nothing and still exits non-zero; a drive whose own scan errored is not
-written. The parent directory must already exist.
+With `--once`, every measured drive is archived and then reported. In the
+long-running daemon the report is written when a drive is archived, so the
+periodic discovery polls report only the drives they newly archive — not every
+drive on every poll.
+
+The whole scan batch is encoded in memory and appended with one `O_APPEND`
+write, so a marshal failure leaves nothing behind and a reader cannot see this
+batch's lines split by another writer's batch. This is not a per-line atomicity
+guarantee: a write may need more than one syscall after a short write, and a
+hard failure part-way through can leave a truncated final line. A tailer (for
+example Alloy) must ignore any line that does not parse as JSON.
+
+A scan that measured nothing appends nothing and still exits non-zero; a drive
+whose own scan errored is not written. The parent directory must already exist.
 
 The file is capped at 8 MiB: once it reaches that size it is renamed to
 `<file>.1` (replacing any previous rotation) and a fresh file is started, so
 the active path is never rewritten in place and a tailer follows the renamed
-file instead of re-reading history. At most two files exist on disk.
+file instead of re-reading history. At most two report files exist on disk,
+plus the `<file>.lock` sidecar. The size check, rotation and append are
+serialized by a cross-process lock on that sidecar, so overlapping scans
+cannot rotate away each other's active file. The report file is set to `0644`
+even under a restrictive umask, so a non-root collector keeps read access.
 
 ### Screenshot directory
 

@@ -80,8 +80,9 @@ func (w *Watcher) snapshotOnce(ctx context.Context, reason string) ([]SnapshotRe
 		if err != nil {
 			errs = append(errs, err)
 		}
-		// A failed report-log append still leaves the snapshot archived, so
-		// the record is kept; a failed save returns an empty record.
+		// Archiving and reporting are independent: a failed report append
+		// still leaves the snapshot archived, and a failed save still gets a
+		// report line. Only a successful save yields a record for the caller.
 		if record.ID != "" {
 			records = append(records, record)
 		}
@@ -287,24 +288,34 @@ func hasSuccessfulDrive(drives []smart.DriveInfo) bool {
 }
 
 func (w *Watcher) saveAndPublish(ctx context.Context, reason string, drive smart.DriveInfo) (SnapshotRecord, error) {
-	record, err := w.store.SaveSnapshot(w.now(), reason, drive)
-	if err != nil {
-		return SnapshotRecord{}, err
-	}
-	event := Event{
-		Type:       "smart_snapshot",
-		Timestamp:  record.Timestamp,
-		DeviceKey:  record.Device.Key,
-		SnapshotID: record.ID,
-		Path:       record.Path,
-		Reason:     record.Reason,
-		Summary:    record.Device,
-	}
-	w.hub.Publish(ctx, event)
-	if w.reportLog != "" {
-		if err := AppendReport(w.reportLog, []Snapshot{ReportSnapshot(record, drive)}); err != nil {
-			return record, err
+	record, snapshot, saveErr := w.store.saveSnapshot(w.now(), reason, drive)
+	if saveErr == nil {
+		event := Event{
+			Type:       "smart_snapshot",
+			Timestamp:  record.Timestamp,
+			DeviceKey:  record.Device.Key,
+			SnapshotID: record.ID,
+			Path:       record.Path,
+			Reason:     record.Reason,
+			Summary:    record.Device,
 		}
+		w.hub.Publish(ctx, event)
 	}
-	return record, nil
+
+	// The store built the Snapshot even when persistence failed, so the report
+	// is written from the same value the archive would hold. Both failures are
+	// preserved; the single-error cases keep the original error unwrapped so
+	// the no-report path is unchanged.
+	var reportErr error
+	if w.reportLog != "" {
+		reportErr = AppendReport(w.reportLog, []Snapshot{snapshot})
+	}
+	switch {
+	case saveErr != nil && reportErr != nil:
+		return record, errors.Join(saveErr, reportErr)
+	case saveErr != nil:
+		return record, saveErr
+	default:
+		return record, reportErr
+	}
 }

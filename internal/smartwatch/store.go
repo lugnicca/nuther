@@ -34,32 +34,47 @@ func (s *Store) LoadIndex() (Index, error) {
 }
 
 func (s *Store) SaveSnapshot(now time.Time, reason string, drive smart.DriveInfo) (SnapshotRecord, error) {
+	record, _, err := s.saveSnapshot(now, reason, drive)
+	return record, err
+}
+
+// saveSnapshot builds the Snapshot once, then persists it, returning the
+// object that was archived (or would have been) so a caller can publish the
+// same value to the report log even when persistence fails. The store's
+// on-disk shape is unchanged.
+func (s *Store) saveSnapshot(now time.Time, reason string, drive smart.DriveInfo) (SnapshotRecord, Snapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := os.MkdirAll(filepath.Join(s.dir, "snapshots"), 0755); err != nil {
-		return SnapshotRecord{}, err
-	}
-
-	index, err := s.loadIndexLocked()
-	if err != nil {
-		return SnapshotRecord{}, err
-	}
-
 	summary := SummaryForDrive(drive)
-	id := snapshotID(now, reason, summary.Key)
-	id = s.uniqueSnapshotIDLocked(id)
-	relPath := filepath.Join("snapshots", id+".json")
-	absPath := filepath.Join(s.dir, relPath)
 	snapshot := Snapshot{
-		ID:        id,
 		Timestamp: now.UTC(),
 		Reason:    reason,
 		Device:    summary,
 		SMART:     drive,
 	}
+
+	// MkdirAll first: uniqueSnapshotIDLocked stats into this directory, and a
+	// path that is not a directory (or is unreadable) must fail here rather
+	// than spin the uniqueness loop.
+	if err := os.MkdirAll(filepath.Join(s.dir, "snapshots"), 0755); err != nil {
+		snapshot.ID = snapshotID(now, reason, summary.Key)
+		return SnapshotRecord{}, snapshot, err
+	}
+
+	id := snapshotID(now, reason, summary.Key)
+	id = s.uniqueSnapshotIDLocked(id)
+	snapshot.ID = id
+
+	index, err := s.loadIndexLocked()
+	if err != nil {
+		return SnapshotRecord{}, snapshot, err
+	}
+
+	relPath := filepath.Join("snapshots", id+".json")
+	absPath := filepath.Join(s.dir, relPath)
 	if err := writeJSONAtomic(absPath, snapshot); err != nil {
-		return SnapshotRecord{}, err
+		return SnapshotRecord{}, snapshot, err
 	}
 
 	record := SnapshotRecord{
@@ -90,9 +105,9 @@ func (s *Store) SaveSnapshot(now time.Time, reason string, drive smart.DriveInfo
 	})
 
 	if err := writeJSONAtomic(filepath.Join(s.dir, "index.json"), index); err != nil {
-		return SnapshotRecord{}, err
+		return SnapshotRecord{}, snapshot, err
 	}
-	return record, nil
+	return record, snapshot, nil
 }
 
 func (s *Store) ReadSnapshot(id string) (Snapshot, error) {

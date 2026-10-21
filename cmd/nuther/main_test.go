@@ -39,6 +39,36 @@ func TestRunSmartWatcherOnceFailsWhenPublicationFails(t *testing.T) {
 	}
 }
 
+// A --report-log append that fails must still archive the snapshot and must
+// still exit non-zero.
+func TestRunSmartWatcherOnceReportFailureStillArchives(t *testing.T) {
+	previous := scanDrives
+	scanDrives = func() ([]smart.DriveInfo, error) {
+		return []smart.DriveInfo{{
+			Device:       "/dev/sda",
+			Model:        "Test Drive",
+			Serial:       "SN-A",
+			Interface:    "SATA SSD",
+			HealthStatus: smart.HealthGood,
+			HealthPassed: true,
+		}}, nil
+	}
+	defer func() { scanDrives = previous }()
+
+	storeDir := t.TempDir()
+	err := runSmartWatcher("watch-smart", []string{
+		"--once",
+		"--store", storeDir,
+		"--report-log", filepath.Join(t.TempDir(), "missing", "report.jsonl"),
+	})
+	if err == nil {
+		t.Fatal("runSmartWatcher() error = nil, want non-zero report failure")
+	}
+	if _, err := os.Stat(filepath.Join(storeDir, "index.json")); err != nil {
+		t.Fatalf("snapshot index not written despite report failure: %v", err)
+	}
+}
+
 // --report-log appends exactly one line per measured drive, so the fleet map
 // can read the full report from the newest line.
 func TestRunSmartWatcherOnceWritesOneReportLinePerMeasuredDrive(t *testing.T) {
