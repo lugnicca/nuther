@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.7.0] - unreleased
 
+### Fixed
+
+- `nuther watch-smart` no longer requires `HOME` (or `XDG_CONFIG_HOME`) when
+  `--store` is given: the snapshot store default is resolved after flag parsing,
+  so the systemd unit and macOS LaunchDaemon — which ship no
+  `Environment=HOME=` — run. Without `--store`, the failure now names the
+  unresolvable store default and `$HOME` instead of aborting before the flags.
+
 ### Added
 
 - `nuther watch-smart --report-log <file>` appends one compact JSON line per

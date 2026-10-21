@@ -189,14 +189,9 @@ func runSmartWatcher(name string, args []string) error {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 
-	defaultStore, err := defaultSmartSnapshotStore()
-	if err != nil {
-		return err
-	}
-
 	interval := flags.Duration("interval", 30*time.Second, "device detection polling interval")
 	snapshotInterval := flags.Duration("snapshot-interval", 0, "periodic snapshot interval; disabled when 0")
-	storePath := flags.String("store", defaultStore, "snapshot store directory")
+	storePath := flags.String("store", "", "snapshot store directory (default: <user config dir>/nuther/smart-snapshots)")
 	listenAddr := flags.String("listen", "127.0.0.1:0", "HTTP listen address for events and snapshot retrieval")
 	webhookURL := flags.String("webhook-url", "", "optional outbound webhook URL for snapshot events")
 	textfileDir := flags.String("textfile", "", "directory for the Prometheus textfile output; disabled when empty")
@@ -204,6 +199,13 @@ func runSmartWatcher(name string, args []string) error {
 	once := flags.Bool("once", false, "take one manual snapshot of detected drives and exit")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if *storePath == "" {
+		resolved, err := defaultSmartSnapshotStore()
+		if err != nil {
+			return fmt.Errorf("--store not given and the default snapshot store could not be resolved: %w", err)
+		}
+		*storePath = resolved
 	}
 	if *interval <= 0 {
 		return fmt.Errorf("--interval must be greater than 0")

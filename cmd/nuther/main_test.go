@@ -9,6 +9,50 @@ import (
 	"nuther/internal/smart"
 )
 
+// --store given: the run must not consult HOME at all, so a bare service
+// environment that has none still completes.
+func TestRunSmartWatcherOnceWithStoreIgnoresHome(t *testing.T) {
+	previous := scanDrives
+	scanDrives = func() ([]smart.DriveInfo, error) {
+		return []smart.DriveInfo{{
+			Device:       "/dev/sda",
+			Model:        "Test Drive",
+			Serial:       "SN-A",
+			Interface:    "SATA SSD",
+			HealthStatus: smart.HealthGood,
+			HealthPassed: true,
+		}}, nil
+	}
+	defer func() { scanDrives = previous }()
+
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	if err := runSmartWatcher("watch-smart", []string{"--once", "--store", t.TempDir()}); err != nil {
+		t.Fatalf("runSmartWatcher() error = %v, want a HOME-independent run", err)
+	}
+}
+
+// Without --store the default needs a home config dir. When there is none the
+// run must fail naming the store and HOME, not crash and not pick a path.
+func TestRunSmartWatcherWithoutStoreAndWithoutHomeFailsHonestly(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	if _, err := os.UserConfigDir(); err == nil {
+		t.Skip("platform resolves a config dir without HOME")
+	}
+
+	err := runSmartWatcher("watch-smart", []string{"--once"})
+	if err == nil {
+		t.Fatal("runSmartWatcher() error = nil, want an honest store resolution failure")
+	}
+	for _, want := range []string{"--store", "HOME"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not mention %q", err.Error(), want)
+		}
+	}
+}
+
 // A --once run whose textfile publication fails must still exit non-zero and
 // must still have saved the snapshot.
 func TestRunSmartWatcherOnceFailsWhenPublicationFails(t *testing.T) {
