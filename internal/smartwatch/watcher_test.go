@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -455,26 +456,51 @@ func TestWatcherRunRefreshesTextfileOnPoll(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- watcher.Run(ctx) }()
 
-	// The startup publish stamps 1700000001; a poll must replace the file
-	// with a later stamp.
+	// The startup publish stamps 1700000001 (the first scan). A poll must
+	// replace the file with a strictly later stamp; any later poll may
+	// legitimately overwrite it again, so the value is not pinned.
+	const startupStamp = int64(1700000001)
 	deadline := time.Now().Add(3 * time.Second)
 	refreshed := false
 	for time.Now().Before(deadline) {
 		data, err := os.ReadFile(filepath.Join(dir, promtext.FileName))
-		if err == nil && strings.Contains(string(data), " 1700000002\n") {
-			refreshed = true
-			break
+		if err == nil {
+			if stamp, ok := textfileStamp(string(data)); ok && stamp > startupStamp {
+				refreshed = true
+				break
+			}
 		}
 		time.Sleep(time.Millisecond)
 	}
 	if !refreshed {
-		t.Fatal("textfile was not refreshed on a poll tick")
+		t.Fatal("textfile was not refreshed with a later stamp on a poll tick")
 	}
 
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run() error = %v, want context.Canceled", err)
 	}
+}
+
+// textfileStamp returns the snapshot timestamp of a rendered textfile,
+// identified by its metric name so an arbitrary line cannot satisfy it.
+func textfileStamp(data string) (int64, bool) {
+	const metric = "nuther_smart_snapshot_timestamp_seconds{"
+	for _, line := range strings.Split(data, "\n") {
+		if !strings.HasPrefix(line, metric) {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			return 0, false
+		}
+		stamp, err := strconv.ParseInt(fields[len(fields)-1], 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		return stamp, true
+	}
+	return 0, false
 }
 
 func TestWatcherRunTextfileNeverPublishedFails(t *testing.T) {
