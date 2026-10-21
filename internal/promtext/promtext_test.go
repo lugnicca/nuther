@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -74,14 +75,35 @@ func TestWriteAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat() error = %v", err)
 	}
-	if got := info.Mode().Perm(); got != 0o644 {
-		t.Fatalf("mode = %o, want 644", got)
-	}
-
 	previous, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
+	if !bytes.Equal(previous, []byte("first\n")) {
+		t.Fatalf("content = %q, want %q", previous, "first\n")
+	}
+	if runtime.GOOS == "windows" {
+		// Windows synthesizes permission bits from the read-only attribute, so
+		// a writable file always reports 0666 and the POSIX 0644 the textfile
+		// collector relies on is unobservable here. Assert the properties that
+		// do hold everywhere: a readable regular file, complete content, and no
+		// scratch file left behind by the atomic replace.
+		if !info.Mode().IsRegular() || info.Mode().Perm()&0o400 == 0 {
+			t.Fatalf("mode = %v, want a readable regular file", info.Mode())
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("ReadDir() error = %v", err)
+		}
+		if len(entries) != 1 || entries[0].Name() != FileName {
+			t.Fatalf("directory entries = %v, want only %s", entries, FileName)
+		}
+	} else if got := info.Mode().Perm(); got != 0o644 {
+		// The world-readable mode is a real guarantee for the collector on
+		// POSIX systems, so it stays asserted there.
+		t.Fatalf("mode = %o, want 644", got)
+	}
+
 	if err := writeAtomic(path, func() ([]byte, error) { return nil, errors.New("render failed") }); err == nil {
 		t.Fatal("writeAtomic() error = nil, want render error")
 	}

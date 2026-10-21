@@ -668,23 +668,29 @@ func TestWatcherRunPollArchiveFailureStillPublishes(t *testing.T) {
 // the first one: the archive/store cause and the export cause must both be
 // present, so a duplicated export error cannot pass as a joined pair.
 func TestWatcherSnapshotOnceJoinsArchiveAndExportErrors(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "does-not-exist")
+	// The textfile dir does not exist, so the export fails on every OS.
+	textfileDir := filepath.Join(t.TempDir(), "does-not-exist")
+	// Block archiving with a regular file where the store expects a
+	// "snapshots" directory. This fails on every OS too (POSIX reports
+	// ENOTDIR, Windows reports ERROR_PATH_NOT_FOUND), and capturing the store
+	// dir lets each joined cause be attributed to its own failure by path.
+	storeDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(storeDir, "snapshots"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
 	watcher := NewWatcher(WatcherConfig{
-		Store: blockedSnapshotStore(t),
+		Store: NewStore(storeDir),
 		Hub:   NewEventHub(""),
 		Scanner: func() ([]smart.DriveInfo, error) {
 			return []smart.DriveInfo{testDrive("/dev/sda", "SN-A")}, nil
 		},
 		Now:         func() time.Time { return time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC) },
-		TextfileDir: dir,
+		TextfileDir: textfileDir,
 	})
 
 	_, err := watcher.SnapshotOnce(t.Context(), ReasonManual)
 	if err == nil {
 		t.Fatal("SnapshotOnce() error = nil, want both failures")
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("SnapshotOnce() error = %v, want the export cause visible", err)
 	}
 	var joined interface{ Unwrap() []error }
 	if !errors.As(err, &joined) {
@@ -694,13 +700,18 @@ func TestWatcherSnapshotOnceJoinsArchiveAndExportErrors(t *testing.T) {
 	if len(causes) < 2 {
 		t.Fatalf("SnapshotOnce() error = %v, want both causes joined", err)
 	}
+	// Attribute causes by the path each failure names, not by error kind:
+	// Windows aliases ENOTDIR to ERROR_PATH_NOT_FOUND, which os.ErrNotExist
+	// also matches, so errors.Is cannot tell the archive cause from the export
+	// cause there. Requiring one cause per path proves both distinct failures
+	// are surfaced rather than one duplicated.
 	var sawArchive, sawExport bool
 	for _, cause := range causes {
 		switch {
-		case errors.Is(cause, os.ErrNotExist):
-			sawExport = true
-		case strings.Contains(cause.Error(), "snapshots"):
+		case strings.Contains(cause.Error(), storeDir):
 			sawArchive = true
+		case strings.Contains(cause.Error(), textfileDir):
+			sawExport = true
 		}
 	}
 	if !sawArchive || !sawExport {
