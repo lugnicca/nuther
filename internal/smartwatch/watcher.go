@@ -19,6 +19,7 @@ type Watcher struct {
 	snapshotInterval time.Duration
 	now              func() time.Time
 	textfileDir      string
+	reportLog        string
 }
 
 type WatcherConfig struct {
@@ -29,6 +30,7 @@ type WatcherConfig struct {
 	SnapshotInterval time.Duration
 	Now              func() time.Time
 	TextfileDir      string
+	ReportLog        string
 }
 
 func NewWatcher(cfg WatcherConfig) *Watcher {
@@ -48,6 +50,7 @@ func NewWatcher(cfg WatcherConfig) *Watcher {
 		snapshotInterval: cfg.SnapshotInterval,
 		now:              now,
 		textfileDir:      cfg.TextfileDir,
+		reportLog:        cfg.ReportLog,
 	}
 }
 
@@ -76,9 +79,12 @@ func (w *Watcher) snapshotOnce(ctx context.Context, reason string) ([]SnapshotRe
 		record, err := w.saveAndPublish(ctx, reason, drive)
 		if err != nil {
 			errs = append(errs, err)
-			continue
 		}
-		records = append(records, record)
+		// A failed report-log append still leaves the snapshot archived, so
+		// the record is kept; a failed save returns an empty record.
+		if record.ID != "" {
+			records = append(records, record)
+		}
 	}
 
 	// Success requires at least one readable drive whether or not a textfile
@@ -295,5 +301,10 @@ func (w *Watcher) saveAndPublish(ctx context.Context, reason string, drive smart
 		Summary:    record.Device,
 	}
 	w.hub.Publish(ctx, event)
+	if w.reportLog != "" {
+		if err := AppendReport(w.reportLog, []Snapshot{ReportSnapshot(record, drive)}); err != nil {
+			return record, err
+		}
+	}
 	return record, nil
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"nuther/internal/smart"
@@ -35,5 +36,43 @@ func TestRunSmartWatcherOnceFailsWhenPublicationFails(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(storeDir, "index.json")); err != nil {
 		t.Fatalf("snapshot index not written despite export failure: %v", err)
+	}
+}
+
+// --report-log appends exactly one line per measured drive, so the fleet map
+// can read the full report from the newest line.
+func TestRunSmartWatcherOnceWritesOneReportLinePerMeasuredDrive(t *testing.T) {
+	previous := scanDrives
+	scanDrives = func() ([]smart.DriveInfo, error) {
+		return []smart.DriveInfo{
+			{Device: "/dev/sda", Model: "Test Drive A", Serial: "SN-A", Interface: "SATA SSD", HealthStatus: smart.HealthGood, HealthPassed: true},
+			{Device: "/dev/sdb", Model: "Test Drive B", Serial: "SN-B", Interface: "SATA SSD", HealthStatus: smart.HealthGood, HealthPassed: true},
+		}, nil
+	}
+	defer func() { scanDrives = previous }()
+
+	reportPath := filepath.Join(t.TempDir(), "report.jsonl")
+	err := runSmartWatcher("watch-smart", []string{
+		"--once",
+		"--store", t.TempDir(),
+		"--report-log", reportPath,
+	})
+	if err != nil {
+		t.Fatalf("runSmartWatcher() error = %v", err)
+	}
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("report lines = %d, want 2", len(lines))
+	}
+	for _, line := range lines {
+		for _, want := range []string{`"id":`, `"timestamp":`, `"reason":`, `"device":`, `"smart":`} {
+			if !strings.Contains(line, want) {
+				t.Fatalf("report line missing %s: %s", want, line)
+			}
+		}
 	}
 }

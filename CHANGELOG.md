@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - unreleased
+
+### Added
+
+- `nuther watch-smart --report-log <file>` appends one compact JSON line per
+  drive actually measured in each scan — the same object the snapshot archive
+  stores (`id`, `timestamp`, `reason`, `device`, `smart`, including the full ATA
+  attribute table or NVMe health log). Each line is a single atomic `O_APPEND`
+  write, so a tailer never sees a partial line. A scan that measured nothing
+  appends nothing and still exits non-zero. The file is capped at 8 MiB: once
+  it reaches the cap it is renamed to `<file>.1` and a fresh file is started,
+  so the active path is never rewritten in place and a tailer does not re-read
+  history.
+
 ## [0.6.0] - 2026-10-21
 
 ### Added

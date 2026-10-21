@@ -130,6 +130,7 @@ Flags:
 | `--listen` | `127.0.0.1:0` | Local HTTP address for event and snapshot routes |
 | `--webhook-url` | empty | Optional outbound webhook URL for snapshot events |
 | `--textfile` | empty | Directory for the Prometheus textfile output; disabled when empty |
+| `--report-log` | empty | Path to append one full JSON report line per measured drive; disabled when empty |
 | `--once` | `false` | Take one manual snapshot and exit |
 
 On startup, the watcher prints:
@@ -182,6 +183,27 @@ Exposed series (one label set per disk: `device`, `serial`, `model`, `type`,
 | `nuther_smart_scan_success` | `1` normally, `0` when that disk's scan errored (only series for such a disk) |
 
 No `host` label is added; Alloy's `external_labels` supplies it.
+
+### JSON report log
+
+`watch-smart --report-log <file>` appends one compact JSON object per line for
+each drive that was actually measured in the scan — the same object the
+snapshot archive stores (`id`, `timestamp`, `reason`, `device`, `smart`, with
+the full ATA attribute table or NVMe health log):
+
+```bash
+sudo ./nuther watch-smart --once --report-log /var/lib/nuther/smart-reports.jsonl
+```
+
+Each line is written with a single `O_APPEND` write, so a reader (for example
+Alloy's file tailer) never sees a partial line. A scan that measured nothing
+appends nothing and still exits non-zero; a drive whose own scan errored is not
+written. The parent directory must already exist.
+
+The file is capped at 8 MiB: once it reaches that size it is renamed to
+`<file>.1` (replacing any previous rotation) and a fresh file is started, so
+the active path is never rewritten in place and a tailer follows the renamed
+file instead of re-reading history. At most two files exist on disk.
 
 ### Screenshot directory
 
