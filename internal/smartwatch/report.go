@@ -56,7 +56,12 @@ func AppendReport(path string, snapshots []Snapshot) error {
 		}
 		return lockErr
 	}
-	defer release()
+	defer func() {
+		// The batch is already appended by now, so a close/unlock failure must
+		// not turn a successful append into a reported error. The OS drops the
+		// flock when the process exits, so there is nothing to recover.
+		_ = release()
+	}()
 
 	if err := rotateReportIfFull(path); err != nil {
 		return err
@@ -93,7 +98,9 @@ func appendReportBatch(path string, batch []byte) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	// The write result below is what callers act on; a close error after a
+	// completed append is not recoverable and must not mask it.
+	defer func() { _ = f.Close() }()
 	if err := f.Chmod(0o644); err != nil {
 		return err
 	}
