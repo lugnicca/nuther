@@ -231,6 +231,161 @@ func TestRenderHealthStatusPrecedence(t *testing.T) {
 	}
 }
 
+// A measurement smartctl never supplied must not surface as a zero-valued
+// sample: availability travels from the JSON parse into Render, so an absent
+// field is omitted while a genuinely measured zero is kept. These fixtures
+// reproduce the review's cases end to end through ParseSmartctlDriveJSON.
+func TestRenderOmitsUnmeasuredMeasurements(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		present []string
+		absent  []string
+	}{
+		{
+			name: "devstat only exports only the measured written bytes",
+			raw: `{
+			  "device": {"name": "/dev/probe", "type": "sat", "protocol": "ATA"},
+			  "model_name": "REVIEW ATA", "serial_number": "REVIEW-ATA", "rotation_rate": 7200,
+			  "logical_block_size": 512,
+			  "ata_device_statistics": {"pages": [{"number": 1, "table": [{"offset": 24, "value": 1000, "flags": {"valid": true}}]}]}
+			}`,
+			present: []string{
+				`nuther_smart_written_bytes_total{device="/dev/probe"`,
+			},
+			absent: []string{
+				"nuther_smart_temperature_celsius{",
+				"nuther_smart_reallocated_sectors{",
+				"nuther_smart_pending_sectors{",
+				"nuther_smart_uncorrectable_sectors{",
+				"nuther_smart_crc_errors{",
+				"nuther_smart_power_on_hours{",
+				"nuther_smart_power_cycles{",
+				"nuther_smart_health_percent{",
+			},
+		},
+		{
+			name: "healthy nvme omits the ata-specific counters",
+			raw: `{
+			  "device": {"name": "/dev/nvme0", "type": "nvme", "protocol": "NVMe"},
+			  "model_name": "Samsung 980", "serial_number": "NVME456", "rotation_rate": 0,
+			  "smart_status": {"passed": true},
+			  "nvme_smart_health_information_log": {"temperature": 38, "percentage_used": 2, "data_units_written": 18000000, "power_cycles": 150, "power_on_hours": 2500}
+			}`,
+			present: []string{
+				`nuther_smart_health_percent{device="/dev/nvme0"`,
+				`nuther_smart_temperature_celsius{device="/dev/nvme0"`,
+				`nuther_smart_power_on_hours{device="/dev/nvme0"`,
+				`nuther_smart_power_cycles{device="/dev/nvme0"`,
+				`nuther_smart_written_bytes_total{device="/dev/nvme0"`,
+			},
+			absent: []string{
+				"nuther_smart_reallocated_sectors{",
+				"nuther_smart_pending_sectors{",
+				"nuther_smart_uncorrectable_sectors{",
+				"nuther_smart_crc_errors{",
+			},
+		},
+		{
+			name: "sparse nvme invents neither life nor written bytes",
+			raw: `{
+			  "device": {"name": "/dev/nvme0", "type": "nvme", "protocol": "NVMe"},
+			  "model_name": "Samsung 980", "serial_number": "NVME456", "rotation_rate": 0,
+			  "smart_status": {"passed": true},
+			  "nvme_smart_health_information_log": {"temperature": 38}
+			}`,
+			present: []string{
+				`nuther_smart_health_status{device="/dev/nvme0"`,
+				`nuther_smart_temperature_celsius{device="/dev/nvme0"`,
+			},
+			absent: []string{
+				"nuther_smart_health_percent{",
+				"nuther_smart_reallocated_sectors{",
+				"nuther_smart_pending_sectors{",
+				"nuther_smart_uncorrectable_sectors{",
+				"nuther_smart_crc_errors{",
+				"nuther_smart_power_on_hours{",
+				"nuther_smart_power_cycles{",
+				"nuther_smart_written_bytes_total{",
+			},
+		},
+		{
+			name: "attribute-only ata reads power-on hours from the attribute",
+			raw: `{
+			  "device": {"name": "/dev/probe", "type": "sat", "protocol": "ATA"},
+			  "model_name": "ATTRIBUTE ONLY", "serial_number": "ATTRONLY", "rotation_rate": 7200,
+			  "ata_smart_attributes": {"table": [{"id": 9, "name": "Power_On_Hours", "value": 99, "worst": 99, "thresh": 0, "raw": {"value": 42, "string": "42"}}]}
+			}`,
+			present: []string{
+				`nuther_smart_power_on_hours{device="/dev/probe",serial="ATTRONLY",model="ATTRIBUTE ONLY",type="HDD",interface="SATA HDD (7200 RPM)"} 42`,
+			},
+			absent: []string{
+				"nuther_smart_health_percent{",
+				"nuther_smart_temperature_celsius{",
+				"nuther_smart_reallocated_sectors{",
+				"nuther_smart_pending_sectors{",
+				"nuther_smart_uncorrectable_sectors{",
+				"nuther_smart_crc_errors{",
+				"nuther_smart_power_cycles{",
+				"nuther_smart_written_bytes_total{",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			drive, err := smart.ParseSmartctlDriveJSON([]byte(tt.raw))
+			if err != nil {
+				t.Fatalf("ParseSmartctlDriveJSON() error = %v", err)
+			}
+			out := Render([]smart.DriveInfo{drive}, time.Unix(1700000000, 0).UTC())
+			for _, want := range tt.present {
+				if !strings.Contains(out, want) {
+					t.Errorf("output missing %q:\n%s", want, out)
+				}
+			}
+			for _, unwanted := range tt.absent {
+				if strings.Contains(out, unwanted) {
+					t.Errorf("output unexpectedly contains %q:\n%s", unwanted, out)
+				}
+			}
+		})
+	}
+}
+
+// A zero that smartctl did measure is a real value and must stay exported, not
+// be dropped along with the genuinely absent fields.
+func TestRenderKeepsMeasuredZero(t *testing.T) {
+	raw := []byte(`{
+	  "device": {"name": "/dev/probe", "type": "sat", "protocol": "ATA"},
+	  "model_name": "ZERO DRIVE", "serial_number": "ZERO", "rotation_rate": 7200,
+	  "smart_status": {"passed": true},
+	  "temperature": {"current": 34}, "power_on_time": {"hours": 42}, "power_cycle_count": 7,
+	  "ata_smart_attributes": {"table": [
+	    {"id": 5, "name": "Reallocated_Sector_Ct", "value": 100, "worst": 100, "thresh": 10, "raw": {"value": 0, "string": "0"}},
+	    {"id": 197, "name": "Current_Pending_Sector", "value": 100, "worst": 100, "thresh": 0, "raw": {"value": 0, "string": "0"}},
+	    {"id": 198, "name": "Offline_Uncorrectable", "value": 100, "worst": 100, "thresh": 0, "raw": {"value": 0, "string": "0"}},
+	    {"id": 199, "name": "UDMA_CRC_Error_Count", "value": 100, "worst": 100, "thresh": 0, "raw": {"value": 0, "string": "0"}}
+	  ]}
+	}`)
+	drive, err := smart.ParseSmartctlDriveJSON(raw)
+	if err != nil {
+		t.Fatalf("ParseSmartctlDriveJSON() error = %v", err)
+	}
+	out := Render([]smart.DriveInfo{drive}, time.Unix(1700000000, 0).UTC())
+	labels := `device="/dev/probe",serial="ZERO",model="ZERO DRIVE",type="HDD",interface="SATA HDD (7200 RPM)"`
+	for _, want := range []string{
+		"nuther_smart_reallocated_sectors{" + labels + "} 0",
+		"nuther_smart_pending_sectors{" + labels + "} 0",
+		"nuther_smart_uncorrectable_sectors{" + labels + "} 0",
+		"nuther_smart_crc_errors{" + labels + "} 0",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing measured zero %q:\n%s", want, out)
+		}
+	}
+}
+
 func ataDrive() smart.DriveInfo {
 	return smart.DriveInfo{
 		Device:            "/dev/sda",
@@ -245,6 +400,15 @@ func ataDrive() smart.DriveInfo {
 		CRCErrors:         2,
 		WearLevelingValue: -1,
 		TotalBytesWritten: -1,
+		Measured: smart.MeasuredFields{
+			Temperature:   true,
+			PowerOnHours:  true,
+			PowerCycles:   true,
+			Reallocated:   true,
+			Pending:       true,
+			Uncorrectable: true,
+			CRC:           true,
+		},
 	}
 }
 
@@ -263,6 +427,13 @@ func nvmeDrive() smart.DriveInfo {
 		WearLevelingValue: -1,
 		TotalBytesWritten: 123456789,
 		NVMeHealthLog:     &smart.NVMeHealthLog{PercentageUsed: 7},
+		Measured: smart.MeasuredFields{
+			Temperature:     true,
+			PowerOnHours:    true,
+			PowerCycles:     true,
+			WrittenBytes:    true,
+			NVMePercentUsed: true,
+		},
 	}
 }
 
@@ -331,19 +502,15 @@ nuther_smart_temperature_celsius{` + nvme + `} 44
 nuther_smart_temperature_celsius{` + ata + `} 38
 # HELP nuther_smart_reallocated_sectors Count of reallocated sectors.
 # TYPE nuther_smart_reallocated_sectors gauge
-nuther_smart_reallocated_sectors{` + nvme + `} 0
 nuther_smart_reallocated_sectors{` + ata + `} 0
 # HELP nuther_smart_pending_sectors Count of sectors pending reallocation.
 # TYPE nuther_smart_pending_sectors gauge
-nuther_smart_pending_sectors{` + nvme + `} 0
 nuther_smart_pending_sectors{` + ata + `} 0
 # HELP nuther_smart_uncorrectable_sectors Count of offline uncorrectable sectors.
 # TYPE nuther_smart_uncorrectable_sectors gauge
-nuther_smart_uncorrectable_sectors{` + nvme + `} 0
 nuther_smart_uncorrectable_sectors{` + ata + `} 0
 # HELP nuther_smart_crc_errors Count of UDMA CRC errors (cable/interface problems).
 # TYPE nuther_smart_crc_errors gauge
-nuther_smart_crc_errors{` + nvme + `} 0
 nuther_smart_crc_errors{` + ata + `} 2
 # HELP nuther_smart_power_on_hours Total power-on hours.
 # TYPE nuther_smart_power_on_hours gauge

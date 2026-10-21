@@ -1,6 +1,9 @@
 package smart
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // HealthStatus represents the health state of a drive or attribute
 type HealthStatus string
@@ -93,6 +96,24 @@ type NVMeHealthLog struct {
 	TempSensor4             int
 }
 
+// MeasuredFields records which numeric measurements smartctl actually
+// supplied. DriveInfo's numeric fields default to zero, so without this a
+// missing measurement is indistinguishable from a measured zero. Render emits
+// a sample only when the matching flag is set, which keeps a genuine measured
+// zero while omitting a value that was never measured.
+type MeasuredFields struct {
+	Temperature     bool
+	PowerOnHours    bool
+	PowerCycles     bool
+	Reallocated     bool
+	Pending         bool
+	Uncorrectable   bool
+	CRC             bool
+	WearLeveling    bool
+	WrittenBytes    bool
+	NVMePercentUsed bool
+}
+
 // DriveInfo contains all information about a storage drive
 type DriveInfo struct {
 	Device      string
@@ -139,6 +160,10 @@ type DriveInfo struct {
 
 	LastUpdate time.Time
 	ScanError  error
+
+	// Measured records which numeric measurements were actually supplied by
+	// smartctl (or are otherwise known). The TUI ignores it.
+	Measured MeasuredFields
 }
 
 // HealthPercent returns the health/remaining-life percentage for the drive.
@@ -307,6 +332,27 @@ type SmartctlNvmeHealthLog struct {
 	CriticalCompTempTime    int64 `json:"critical_comp_temp_time"`
 }
 
+// measurementPresence records which optional measurement keys the smartctl
+// JSON actually contained. Go's zero values cannot distinguish "smartctl did
+// not measure this" from "smartctl measured zero", so the parser consults
+// this alongside the decoded struct to fill DriveInfo.Measured.
+type measurementPresence struct {
+	Temperature *struct {
+		Current *int `json:"current"`
+	} `json:"temperature"`
+	PowerOnTime *struct {
+		Hours *int64 `json:"hours"`
+	} `json:"power_on_time"`
+	PowerCycleCount *int64 `json:"power_cycle_count"`
+	NVMeLog         *struct {
+		Temperature      *int   `json:"temperature"`
+		PercentageUsed   *int   `json:"percentage_used"`
+		DataUnitsWritten *int64 `json:"data_units_written"`
+		PowerCycles      *int64 `json:"power_cycles"`
+		PowerOnHours     *int64 `json:"power_on_hours"`
+	} `json:"nvme_smart_health_information_log"`
+}
+
 // SmartctlOutput represents the complete smartctl JSON output
 type SmartctlOutput struct {
 	JSONFormatVersion []int `json:"json_format_version"`
@@ -341,6 +387,23 @@ type SmartctlOutput struct {
 	AtaSmartAttributes            SmartctlAtaSmartAttributes  `json:"ata_smart_attributes"`
 	AtaDeviceStatistics           SmartctlAtaDeviceStatistics `json:"ata_device_statistics"`
 	NvmeSmartHealthInformationLog SmartctlNvmeHealthLog       `json:"nvme_smart_health_information_log"`
+
+	// Presence records which optional measurements the JSON contained. It is
+	// filled by UnmarshalJSON and never marshalled.
+	Presence measurementPresence `json:"-"`
+}
+
+// UnmarshalJSON decodes the output twice: once into the struct proper and once
+// into a presence record, so the parser can tell an absent measurement from a
+// measured zero.
+func (s *SmartctlOutput) UnmarshalJSON(data []byte) error {
+	type plain SmartctlOutput
+	var decoded plain
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*s = SmartctlOutput(decoded)
+	return json.Unmarshal(data, &s.Presence)
 }
 
 // SmartctlScanResult represents the result of smartctl --scan

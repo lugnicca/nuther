@@ -366,15 +366,28 @@ func parseDriveInfo(device string, s SmartctlOutput) DriveInfo {
 		PhysicalSector:    s.PhysicalBlockSize,
 		FormFactor:        s.FormFactor.Name,
 		RotationRate:      s.RotationRate,
-		Temperature:       s.Temperature.Current,
-		PowerOnHours:      s.PowerOnTime.Hours,
-		PowerCycles:       s.PowerCycleCount,
 		SmartSupported:    true,
 		SmartEnabled:      true,
 		HealthPassed:      s.SmartStatus.Passed != nil && *s.SmartStatus.Passed,
 		WearLevelingValue: -1,
 		TotalBytesWritten: -1,
 		LastUpdate:        time.Now(),
+	}
+
+	// A top-level measurement is only present when smartctl emitted the key;
+	// its absence leaves the field at zero and Measured false, so the textfile
+	// omits it rather than asserting a zero that was never measured.
+	if s.Presence.Temperature != nil && s.Presence.Temperature.Current != nil {
+		drive.Temperature = s.Temperature.Current
+		drive.Measured.Temperature = true
+	}
+	if s.Presence.PowerOnTime != nil && s.Presence.PowerOnTime.Hours != nil {
+		drive.PowerOnHours = s.PowerOnTime.Hours
+		drive.Measured.PowerOnHours = true
+	}
+	if s.Presence.PowerCycleCount != nil {
+		drive.PowerCycles = s.PowerCycleCount
+		drive.Measured.PowerCycles = true
 	}
 
 	// smart_status is absent when the status command failed; an absent field is
@@ -411,6 +424,15 @@ func parseDriveInfo(device string, s SmartctlOutput) DriveInfo {
 // parseNVMeDrive parses NVMe-specific information
 func parseNVMeDrive(drive *DriveInfo, s SmartctlOutput) {
 	nvme := s.NvmeSmartHealthInformationLog
+
+	// For NVMe the health log is the measurement source, so availability comes
+	// from which log keys smartctl emitted, not from the top-level echoes.
+	log := s.Presence.NVMeLog
+	drive.Measured.Temperature = log != nil && log.Temperature != nil
+	drive.Measured.PowerOnHours = log != nil && log.PowerOnHours != nil
+	drive.Measured.PowerCycles = log != nil && log.PowerCycles != nil
+	drive.Measured.WrittenBytes = log != nil && log.DataUnitsWritten != nil
+	drive.Measured.NVMePercentUsed = log != nil && log.PercentageUsed != nil
 
 	drive.NVMeHealthLog = &NVMeHealthLog{
 		CriticalWarning:         nvme.CriticalWarning,
@@ -579,24 +601,41 @@ func parseATADrive(drive *DriveInfo, s SmartctlOutput) {
 		switch attr.ID {
 		case AttrReallocatedSectors:
 			drive.ReallocatedSectors = attr.Raw.Value
+			drive.Measured.Reallocated = true
 		case AttrPendingSectors:
 			drive.PendingSectors = attr.Raw.Value
+			drive.Measured.Pending = true
 		case AttrOfflineUncorrectable:
 			drive.UncorrectableSectors = attr.Raw.Value
+			drive.Measured.Uncorrectable = true
 		case AttrUDMACRCError:
 			drive.CRCErrors = attr.Raw.Value
+			drive.Measured.CRC = true
 		case AttrTemperature:
-			if drive.Temperature == 0 {
+			if !drive.Measured.Temperature {
 				drive.Temperature = int(attr.Raw.Value)
+				drive.Measured.Temperature = true
+			}
+		case AttrPowerOnHours:
+			if !drive.Measured.PowerOnHours {
+				drive.PowerOnHours = attr.Raw.Value
+				drive.Measured.PowerOnHours = true
+			}
+		case AttrPowerCycleCount:
+			if !drive.Measured.PowerCycles {
+				drive.PowerCycles = attr.Raw.Value
+				drive.Measured.PowerCycles = true
 			}
 		case AttrWearLevelingCount, AttrMediaWearoutInd:
-			if drive.WearLevelingValue < 0 {
+			if !drive.Measured.WearLeveling {
 				drive.WearLevelingValue = attr.Value
+				drive.Measured.WearLeveling = true
 			}
 		}
 
 		if isTotalLBAsWrittenAttribute(attr.ID, attr.Name) {
 			drive.TotalBytesWritten = attr.Raw.Value * sectorSize(drive)
+			drive.Measured.WrittenBytes = true
 		}
 	}
 
@@ -605,6 +644,7 @@ func parseATADrive(drive *DriveInfo, s SmartctlOutput) {
 	if drive.TotalBytesWritten < 0 {
 		if sectors, ok := deviceStatistic(s, devstatGeneralPage, devstatLogicalSectorsWritten); ok {
 			drive.TotalBytesWritten = sectors * sectorSize(drive)
+			drive.Measured.WrittenBytes = true
 		}
 	}
 }

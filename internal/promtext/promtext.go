@@ -55,59 +55,99 @@ func Render(drives []smart.DriveInfo, now time.Time) string {
 				if d.ScanError != nil || d.HealthStatus == smart.HealthUnknown || d.HealthStatus == "" {
 					return 0, false
 				}
+				// NVMe life comes from percentage_used; without it there is no
+				// wear figure to report, so a passed verdict alone is not enough.
+				if d.IsNVMe && !d.Measured.NVMePercentUsed {
+					return 0, false
+				}
 				return int64(d.HealthPercent()), true
 			},
 		},
 		{
-			name:  "nuther_smart_temperature_celsius",
-			help:  "Current drive temperature in degrees Celsius.",
-			typ:   "gauge",
-			value: func(d smart.DriveInfo) (int64, bool) { return int64(d.Temperature), true },
+			name: "nuther_smart_temperature_celsius",
+			help: "Current drive temperature in degrees Celsius.",
+			typ:  "gauge",
+			value: func(d smart.DriveInfo) (int64, bool) {
+				if !d.Measured.Temperature {
+					return 0, false
+				}
+				return int64(d.Temperature), true
+			},
 		},
 		{
-			name:  "nuther_smart_reallocated_sectors",
-			help:  "Count of reallocated sectors.",
-			typ:   "gauge",
-			value: func(d smart.DriveInfo) (int64, bool) { return d.ReallocatedSectors, true },
+			name: "nuther_smart_reallocated_sectors",
+			help: "Count of reallocated sectors.",
+			typ:  "gauge",
+			value: func(d smart.DriveInfo) (int64, bool) {
+				if !d.Measured.Reallocated {
+					return 0, false
+				}
+				return d.ReallocatedSectors, true
+			},
 		},
 		{
-			name:  "nuther_smart_pending_sectors",
-			help:  "Count of sectors pending reallocation.",
-			typ:   "gauge",
-			value: func(d smart.DriveInfo) (int64, bool) { return d.PendingSectors, true },
+			name: "nuther_smart_pending_sectors",
+			help: "Count of sectors pending reallocation.",
+			typ:  "gauge",
+			value: func(d smart.DriveInfo) (int64, bool) {
+				if !d.Measured.Pending {
+					return 0, false
+				}
+				return d.PendingSectors, true
+			},
 		},
 		{
-			name:  "nuther_smart_uncorrectable_sectors",
-			help:  "Count of offline uncorrectable sectors.",
-			typ:   "gauge",
-			value: func(d smart.DriveInfo) (int64, bool) { return d.UncorrectableSectors, true },
+			name: "nuther_smart_uncorrectable_sectors",
+			help: "Count of offline uncorrectable sectors.",
+			typ:  "gauge",
+			value: func(d smart.DriveInfo) (int64, bool) {
+				if !d.Measured.Uncorrectable {
+					return 0, false
+				}
+				return d.UncorrectableSectors, true
+			},
 		},
 		{
-			name:  "nuther_smart_crc_errors",
-			help:  "Count of UDMA CRC errors (cable/interface problems).",
-			typ:   "gauge",
-			value: func(d smart.DriveInfo) (int64, bool) { return d.CRCErrors, true },
+			name: "nuther_smart_crc_errors",
+			help: "Count of UDMA CRC errors (cable/interface problems).",
+			typ:  "gauge",
+			value: func(d smart.DriveInfo) (int64, bool) {
+				if !d.Measured.CRC {
+					return 0, false
+				}
+				return d.CRCErrors, true
+			},
 		},
 		// Power-on hours and cycles are lifetime totals, not monotonic event
 		// counters: a replaced drive resets them, so they stay gauges.
 		{
-			name:  "nuther_smart_power_on_hours",
-			help:  "Total power-on hours.",
-			typ:   "gauge",
-			value: func(d smart.DriveInfo) (int64, bool) { return d.PowerOnHours, true },
+			name: "nuther_smart_power_on_hours",
+			help: "Total power-on hours.",
+			typ:  "gauge",
+			value: func(d smart.DriveInfo) (int64, bool) {
+				if !d.Measured.PowerOnHours {
+					return 0, false
+				}
+				return d.PowerOnHours, true
+			},
 		},
 		{
-			name:  "nuther_smart_power_cycles",
-			help:  "Total power cycles.",
-			typ:   "gauge",
-			value: func(d smart.DriveInfo) (int64, bool) { return d.PowerCycles, true },
+			name: "nuther_smart_power_cycles",
+			help: "Total power cycles.",
+			typ:  "gauge",
+			value: func(d smart.DriveInfo) (int64, bool) {
+				if !d.Measured.PowerCycles {
+					return 0, false
+				}
+				return d.PowerCycles, true
+			},
 		},
 		{
 			name: "nuther_smart_wear_leveling_value",
 			help: "Normalized wear leveling value (100 new, 0 worn out); omitted when unavailable.",
 			typ:  "gauge",
 			value: func(d smart.DriveInfo) (int64, bool) {
-				if d.WearLevelingValue < 0 {
+				if !d.Measured.WearLeveling {
 					return 0, false
 				}
 				return int64(d.WearLevelingValue), true
@@ -118,7 +158,7 @@ func Render(drives []smart.DriveInfo, now time.Time) string {
 			help: "Total bytes written; omitted when unavailable.",
 			typ:  "counter",
 			value: func(d smart.DriveInfo) (int64, bool) {
-				if d.TotalBytesWritten < 0 {
+				if !d.Measured.WrittenBytes {
 					return 0, false
 				}
 				return d.TotalBytesWritten, true
