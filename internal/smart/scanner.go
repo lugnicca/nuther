@@ -572,13 +572,26 @@ func parseATADrive(drive *DriveInfo, s SmartctlOutput) {
 		if !isValidAtaAttribute(attr) {
 			continue
 		}
+
+		// A numeric field smartctl omitted or set to null decodes to a nil
+		// pointer: it is not a measurement, so it must neither mark one
+		// available nor shadow a source that did supply one.
+		raw, rawPresent := int64(0), attr.Raw.Value != nil
+		if rawPresent {
+			raw = *attr.Raw.Value
+		}
+		normalized, normalizedPresent := 0, attr.Value != nil
+		if normalizedPresent {
+			normalized = *attr.Value
+		}
+
 		smartAttr := SmartAttribute{
 			ID:         attr.ID,
 			Name:       attr.Name,
-			Value:      attr.Value,
+			Value:      normalized,
 			Worst:      attr.Worst,
 			Threshold:  attr.Thresh,
-			RawValue:   attr.Raw.Value,
+			RawValue:   raw,
 			RawString:  attr.Raw.String,
 			Flags:      attr.Flags.String,
 			WhenFailed: attr.WhenFailed,
@@ -600,41 +613,49 @@ func parseATADrive(drive *DriveInfo, s SmartctlOutput) {
 
 		switch attr.ID {
 		case AttrReallocatedSectors:
-			drive.ReallocatedSectors = attr.Raw.Value
-			drive.Measured.Reallocated = true
+			if rawPresent {
+				drive.ReallocatedSectors = raw
+				drive.Measured.Reallocated = true
+			}
 		case AttrPendingSectors:
-			drive.PendingSectors = attr.Raw.Value
-			drive.Measured.Pending = true
+			if rawPresent {
+				drive.PendingSectors = raw
+				drive.Measured.Pending = true
+			}
 		case AttrOfflineUncorrectable:
-			drive.UncorrectableSectors = attr.Raw.Value
-			drive.Measured.Uncorrectable = true
+			if rawPresent {
+				drive.UncorrectableSectors = raw
+				drive.Measured.Uncorrectable = true
+			}
 		case AttrUDMACRCError:
-			drive.CRCErrors = attr.Raw.Value
-			drive.Measured.CRC = true
+			if rawPresent {
+				drive.CRCErrors = raw
+				drive.Measured.CRC = true
+			}
 		case AttrTemperature:
-			if !drive.Measured.Temperature {
-				drive.Temperature = int(attr.Raw.Value)
+			if rawPresent && !drive.Measured.Temperature {
+				drive.Temperature = int(raw)
 				drive.Measured.Temperature = true
 			}
 		case AttrPowerOnHours:
-			if !drive.Measured.PowerOnHours {
-				drive.PowerOnHours = attr.Raw.Value
+			if rawPresent && !drive.Measured.PowerOnHours {
+				drive.PowerOnHours = raw
 				drive.Measured.PowerOnHours = true
 			}
 		case AttrPowerCycleCount:
-			if !drive.Measured.PowerCycles {
-				drive.PowerCycles = attr.Raw.Value
+			if rawPresent && !drive.Measured.PowerCycles {
+				drive.PowerCycles = raw
 				drive.Measured.PowerCycles = true
 			}
 		case AttrWearLevelingCount, AttrMediaWearoutInd:
-			if !drive.Measured.WearLeveling {
-				drive.WearLevelingValue = attr.Value
+			if normalizedPresent && !drive.Measured.WearLeveling {
+				drive.WearLevelingValue = normalized
 				drive.Measured.WearLeveling = true
 			}
 		}
 
-		if isTotalLBAsWrittenAttribute(attr.ID, attr.Name) {
-			drive.TotalBytesWritten = attr.Raw.Value * sectorSize(drive)
+		if isTotalLBAsWrittenAttribute(attr.ID, attr.Name) && rawPresent {
+			drive.TotalBytesWritten = raw * sectorSize(drive)
 			drive.Measured.WrittenBytes = true
 		}
 	}
@@ -661,8 +682,10 @@ func deviceStatistic(s SmartctlOutput, page, offset int) (int64, bool) {
 			continue
 		}
 		for _, entry := range p.Table {
-			if entry.Offset == offset && entry.Flags.Valid {
-				return entry.Value, true
+			// valid alone is not enough: an entry may be flagged valid yet
+			// carry no number, which is not a measurement.
+			if entry.Offset == offset && entry.Flags.Valid && entry.Value != nil {
+				return *entry.Value, true
 			}
 		}
 	}

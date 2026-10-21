@@ -267,11 +267,14 @@ type SmartctlPowerOnTime struct {
 	Hours int64 `json:"hours"`
 }
 
-// SmartctlAtaAttribute represents a single ATA SMART attribute
+// SmartctlAtaAttribute represents a single ATA SMART attribute. Value and
+// Raw.Value are pointers so an attribute smartctl emitted without a number
+// (key absent, or null) stays distinguishable from one measured as zero: a
+// nil pointer means the value was not supplied.
 type SmartctlAtaAttribute struct {
 	ID         int    `json:"id"`
 	Name       string `json:"name"`
-	Value      int    `json:"value"`
+	Value      *int   `json:"value"`
 	Worst      int    `json:"worst"`
 	Thresh     int    `json:"thresh"`
 	WhenFailed string `json:"when_failed"`
@@ -286,7 +289,7 @@ type SmartctlAtaAttribute struct {
 		AutoKeep      bool   `json:"auto_keep"`
 	} `json:"flags"`
 	Raw struct {
-		Value  int64  `json:"value"`
+		Value  *int64 `json:"value"`
 		String string `json:"string"`
 	} `json:"raw"`
 }
@@ -302,8 +305,8 @@ type SmartctlAtaDeviceStatistics struct {
 	Pages []struct {
 		Number int `json:"number"`
 		Table  []struct {
-			Offset int   `json:"offset"`
-			Value  int64 `json:"value"`
+			Offset int    `json:"offset"`
+			Value  *int64 `json:"value"`
 			Flags  struct {
 				Valid bool `json:"valid"`
 			} `json:"flags"`

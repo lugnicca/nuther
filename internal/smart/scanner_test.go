@@ -1583,6 +1583,9 @@ func TestScanDrives_FallbackDemo(t *testing.T) {
 	}
 }
 
+func testIntPtr(v int) *int       { return &v }
+func testInt64Ptr(v int64) *int64 { return &v }
+
 func TestParseATADrive_Flags(t *testing.T) {
 	// Test with WhenFailed, Prefailure=false, UpdatedOnline=false
 	s := SmartctlOutput{
@@ -1591,7 +1594,7 @@ func TestParseATADrive_Flags(t *testing.T) {
 				{
 					ID:         5,
 					Name:       "Reallocated_Sector_Ct",
-					Value:      90,
+					Value:      testIntPtr(90),
 					Worst:      90,
 					Thresh:     10,
 					WhenFailed: "past",
@@ -1610,14 +1613,14 @@ func TestParseATADrive_Flags(t *testing.T) {
 						String:        "------",
 					},
 					Raw: struct {
-						Value  int64  `json:"value"`
+						Value  *int64 `json:"value"`
 						String string `json:"string"`
-					}{Value: 10, String: "10"},
+					}{Value: testInt64Ptr(10), String: "10"},
 				},
 				{
 					ID:    194,
 					Name:  "Temperature_Celsius",
-					Value: 100,
+					Value: testIntPtr(100),
 					Worst: 100,
 					Flags: struct {
 						Value         int    `json:"value"`
@@ -1634,9 +1637,9 @@ func TestParseATADrive_Flags(t *testing.T) {
 						String:        "PO----",
 					},
 					Raw: struct {
-						Value  int64  `json:"value"`
+						Value  *int64 `json:"value"`
 						String string `json:"string"`
-					}{Value: 35, String: "35"},
+					}{Value: testInt64Ptr(35), String: "35"},
 				},
 			},
 		},

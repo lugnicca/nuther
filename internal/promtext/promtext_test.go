@@ -330,6 +330,44 @@ func TestRenderOmitsUnmeasuredMeasurements(t *testing.T) {
 				"nuther_smart_written_bytes_total{",
 			},
 		},
+		{
+			name: "null attribute raw value is not a measurement",
+			raw: `{
+			  "device": {"name": "/dev/probe", "type": "sat", "protocol": "ATA"},
+			  "model_name": "NULL RAW", "serial_number": "NULLRAW", "rotation_rate": 7200,
+			  "logical_block_size": 512,
+			  "ata_smart_attributes": {"table": [
+			    {"id": 1, "name": "Read_Error_Rate", "value": 100, "worst": 100, "thresh": 0, "raw": {"value": 1, "string": "1"}},
+			    {"id": 5, "name": "Reallocated_Sector_Ct", "value": 100, "worst": 100, "thresh": 0, "raw": {"value": null, "string": ""}}
+			  ]}
+			}`,
+			absent: []string{"nuther_smart_reallocated_sectors{"},
+		},
+		{
+			name: "null device statistic value is not a measurement",
+			raw: `{
+			  "device": {"name": "/dev/probe", "type": "sat", "protocol": "ATA"},
+			  "model_name": "NULL STAT", "serial_number": "NULLSTAT", "rotation_rate": 7200,
+			  "logical_block_size": 512,
+			  "ata_device_statistics": {"pages": [{"number": 1, "table": [{"offset": 24, "value": null, "flags": {"valid": true}}]}]}
+			}`,
+			absent: []string{"nuther_smart_written_bytes_total{"},
+		},
+		{
+			name: "null attribute 241 falls back to the valid statistics value",
+			raw: `{
+			  "device": {"name": "/dev/probe", "type": "sat", "protocol": "ATA"},
+			  "model_name": "NULL 241", "serial_number": "NULL241", "rotation_rate": 7200,
+			  "logical_block_size": 512,
+			  "ata_smart_attributes": {"table": [
+			    {"id": 241, "name": "Total_LBAs_Written", "value": 100, "worst": 100, "thresh": 0, "raw": {"value": null, "string": ""}}
+			  ]},
+			  "ata_device_statistics": {"pages": [{"number": 1, "table": [{"offset": 24, "value": 1000, "flags": {"valid": true}}]}]}
+			}`,
+			present: []string{
+				`nuther_smart_written_bytes_total{device="/dev/probe",serial="NULL241",model="NULL 241",type="HDD",interface="SATA HDD (7200 RPM)"} 512000`,
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -383,6 +421,26 @@ func TestRenderKeepsMeasuredZero(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing measured zero %q:\n%s", want, out)
 		}
+	}
+}
+
+// A device statistic measured as zero is a real value and must stay exported,
+// even though the same position with a null value is omitted.
+func TestRenderKeepsMeasuredZeroStatistic(t *testing.T) {
+	raw := []byte(`{
+	  "device": {"name": "/dev/probe", "type": "sat", "protocol": "ATA"},
+	  "model_name": "ZERO STAT", "serial_number": "ZEROSTAT", "rotation_rate": 7200,
+	  "logical_block_size": 512,
+	  "ata_device_statistics": {"pages": [{"number": 1, "table": [{"offset": 24, "value": 0, "flags": {"valid": true}}]}]}
+	}`)
+	drive, err := smart.ParseSmartctlDriveJSON(raw)
+	if err != nil {
+		t.Fatalf("ParseSmartctlDriveJSON() error = %v", err)
+	}
+	out := Render([]smart.DriveInfo{drive}, time.Unix(1700000000, 0).UTC())
+	want := `nuther_smart_written_bytes_total{device="/dev/probe",serial="ZEROSTAT",model="ZERO STAT",type="HDD",interface="SATA HDD (7200 RPM)"} 0`
+	if !strings.Contains(out, want) {
+		t.Errorf("output missing measured zero %q:\n%s", want, out)
 	}
 }
 
