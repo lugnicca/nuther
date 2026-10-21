@@ -200,7 +200,16 @@ func runSmartWatcher(name string, args []string) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if *storePath == "" {
+	storeGiven := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "store" {
+			storeGiven = true
+		}
+	})
+	if storeGiven && *storePath == "" {
+		return fmt.Errorf("--store must not be empty")
+	}
+	if !storeGiven {
 		resolved, err := defaultSmartSnapshotStore()
 		if err != nil {
 			return fmt.Errorf("--store not given and the default snapshot store could not be resolved: %w", err)

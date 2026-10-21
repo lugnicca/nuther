@@ -27,9 +27,60 @@ func TestRunSmartWatcherOnceWithStoreIgnoresHome(t *testing.T) {
 
 	t.Setenv("HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
+	if err := os.Unsetenv("HOME"); err != nil {
+		t.Fatal(err)
+	}
 
-	if err := runSmartWatcher("watch-smart", []string{"--once", "--store", t.TempDir()}); err != nil {
+	storeDir := t.TempDir()
+	if err := runSmartWatcher("watch-smart", []string{"--once", "--store", storeDir}); err != nil {
 		t.Fatalf("runSmartWatcher() error = %v, want a HOME-independent run", err)
+	}
+	if _, err := os.Stat(filepath.Join(storeDir, "index.json")); err != nil {
+		t.Fatalf("snapshot index not written to explicit store: %v", err)
+	}
+}
+
+func TestRunSmartWatcherEmptyStoreDoesNotWrite(t *testing.T) {
+	previous := scanDrives
+	scanDrives = func() ([]smart.DriveInfo, error) {
+		return []smart.DriveInfo{{Device: "/dev/sda", Serial: "SN-A", HealthStatus: smart.HealthGood}}, nil
+	}
+	t.Cleanup(func() { scanDrives = previous })
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"equals", []string{"--once", "--store="}},
+		{"separate", []string{"--once", "--store", ""}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cwd := t.TempDir()
+			t.Chdir(cwd)
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+			t.Setenv("AppData", filepath.Join(home, "AppData"))
+			defaultStore, err := defaultSmartSnapshotStore()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			err = runSmartWatcher("watch-smart", tc.args)
+			if err == nil || err.Error() != "--store must not be empty" {
+				t.Errorf("runSmartWatcher() error = %v, want --store must not be empty", err)
+			}
+			if _, err := os.Stat(defaultStore); !os.IsNotExist(err) {
+				t.Errorf("default store must not be created, stat error = %v", err)
+			}
+			entries, err := os.ReadDir(cwd)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 0 {
+				t.Errorf("cwd must stay empty, got %v", entries)
+			}
+		})
 	}
 }
 
@@ -38,6 +89,9 @@ func TestRunSmartWatcherOnceWithStoreIgnoresHome(t *testing.T) {
 func TestRunSmartWatcherWithoutStoreAndWithoutHomeFailsHonestly(t *testing.T) {
 	t.Setenv("HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
+	if err := os.Unsetenv("HOME"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := os.UserConfigDir(); err == nil {
 		t.Skip("platform resolves a config dir without HOME")
 	}
@@ -46,7 +100,7 @@ func TestRunSmartWatcherWithoutStoreAndWithoutHomeFailsHonestly(t *testing.T) {
 	if err == nil {
 		t.Fatal("runSmartWatcher() error = nil, want an honest store resolution failure")
 	}
-	for _, want := range []string{"--store", "HOME"} {
+	for _, want := range []string{"--store not given", "default snapshot store could not be resolved", "HOME"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not mention %q", err.Error(), want)
 		}
