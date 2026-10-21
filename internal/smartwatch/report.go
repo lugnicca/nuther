@@ -18,21 +18,23 @@ const ReportLogMaxBytes = 8 << 20 // 8 MiB
 // AppendReport appends the scan's snapshots to path as one compact JSON object
 // per line. The whole batch is encoded in memory first, so a marshal failure
 // leaves nothing behind, and it is written in one O_APPEND Write call.
-// Concurrent AppendReport calls cannot interleave because each holds the
-// cross-process lock below for the whole rotation-and-append.
-//
-// What that does not guarantee: os.File.Write may issue more than one write
-// syscall after a short write, and a hard failure part-way through a write can
-// leave a truncated final line. A tailer must therefore ignore any line that
-// does not parse as JSON. An append that fails outright (before any byte is
-// written) leaves the file untouched.
 //
 // The size check, rotation, open and append are serialized by a blocking
 // cross-process lock on path+".lock" (a stable sidecar, because rotation
 // replaces the active file's inode), so overlapping scans cannot both rotate
-// the same active file away. If that lock cannot be taken at all, the report
-// is still written unlocked rather than dropped: waiting for a held lock is
-// preferred, but a lock error must not lose a line.
+// the same active file away. Rotation only ever happens while holding that
+// lock. If the lock cannot be taken at all, the batch is still appended
+// unlocked and the lock error is returned rather than swallowed: the run is
+// not reported as clean, and the active file may exceed the cap until a later
+// scan that can take the lock rotates it. In that case rotation is not
+// serialized, but each append is still one O_APPEND write, so a single batch
+// cannot be split by another writer's batch.
+//
+// What is not guaranteed: os.File.Write may issue more than one write syscall
+// after a short write, and a hard failure part-way through a write can leave a
+// truncated final line. A tailer must therefore ignore any line that does not
+// parse as JSON. An append that fails outright (before any byte is written)
+// leaves the file untouched.
 func AppendReport(path string, snapshots []Snapshot) error {
 	if len(snapshots) == 0 {
 		return nil
@@ -43,10 +45,18 @@ func AppendReport(path string, snapshots []Snapshot) error {
 	}
 
 	release, lockErr := lockReportFile(path)
-	if lockErr == nil {
-		defer release()
+	if lockErr != nil {
+		// Never rotate without the lock: two writers could otherwise both see a
+		// full file and rotate each other's freshly active file away. Surface
+		// the failure and still append the batch without rotating, so the report
+		// is not lost; the file may then exceed the cap until a locked scan
+		// rotates it.
+		if appendErr := appendReportBatch(path, batch); appendErr != nil {
+			return errors.Join(lockErr, appendErr)
+		}
+		return lockErr
 	}
-	// lockErr != nil: proceed unlocked so the report is not silently lost.
+	defer release()
 
 	if err := rotateReportIfFull(path); err != nil {
 		return err
@@ -54,12 +64,16 @@ func AppendReport(path string, snapshots []Snapshot) error {
 	return appendReportBatch(path, batch)
 }
 
+// marshalReportSnapshot is json.Marshal by default; a test can replace it to
+// force an encoding failure and prove the batch is encoded before any write.
+var marshalReportSnapshot = json.Marshal
+
 // encodeReportBatch marshals every snapshot before anything touches the file,
 // so a failure leaves no partial batch behind.
 func encodeReportBatch(snapshots []Snapshot) ([]byte, error) {
 	var batch []byte
 	for _, snapshot := range snapshots {
-		line, err := json.Marshal(snapshot)
+		line, err := marshalReportSnapshot(snapshot)
 		if err != nil {
 			return nil, err
 		}

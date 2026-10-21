@@ -14,16 +14,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`id`, `timestamp`, `reason`, `device`, `smart`, including the full ATA
   attribute table or NVMe health log). With `--once` this is every measured
   drive; in the long-running daemon the discovery polls report only the drives
-  they newly archive. The whole scan batch is one in-memory buffer written
-  with a single `O_APPEND` write, so a marshal failure writes nothing and a
-  tailer cannot see the batch split by another writer. A hard failure
-  part-way through the write can still leave a truncated final line, so a
-  tailer must ignore a line that does not parse as JSON. A scan that measured
-  nothing appends nothing and still exits non-zero. The file is capped at
-  8 MiB: once it reaches the cap it is renamed to `<file>.1` and a fresh file
-  is started, so the active path is never rewritten in place and a tailer does
-  not re-read history. Rotation and append are serialized by a cross-process
-  lock, and the file is set to 0644 so a non-root tailer keeps read access.
+  they newly archive and stop at the first archive or report error, so a poll
+  is not one line per measured drive. The whole scan batch is one in-memory
+  buffer written with a single `O_APPEND` write, so a marshal failure writes
+  nothing and a tailer cannot see the batch split by another writer. A hard
+  failure part-way through the write can still leave a truncated final line,
+  so a tailer must ignore a line that does not parse as JSON. A scan that
+  measured nothing appends nothing and still exits non-zero. The file is
+  capped at 8 MiB: once it reaches the cap it is renamed to `<file>.1` and a
+  fresh file is started, so the active path is never rewritten in place and a
+  tailer does not re-read history. Rotation only happens while holding a
+  cross-process lock; if the lock cannot be taken the batch is still appended
+  unlocked and the run exits non-zero, so the file may temporarily exceed the
+  cap. The file is set to 0644 so a non-root tailer keeps read access.
 
 ## [0.6.0] - 2026-10-21
 

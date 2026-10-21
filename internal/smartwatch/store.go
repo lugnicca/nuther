@@ -48,28 +48,31 @@ func (s *Store) saveSnapshot(now time.Time, reason string, drive smart.DriveInfo
 
 	summary := SummaryForDrive(drive)
 	snapshot := Snapshot{
+		ID:        snapshotID(now, reason, summary.Key),
 		Timestamp: now.UTC(),
 		Reason:    reason,
 		Device:    summary,
 		SMART:     drive,
 	}
 
-	// MkdirAll first: uniqueSnapshotIDLocked stats into this directory, and a
-	// path that is not a directory (or is unreadable) must fail here rather
-	// than spin the uniqueness loop.
+	// MkdirAll, then load the index, then pick an ID. A corrupt index must fail
+	// fast rather than being reached after the uniqueness probe, and the
+	// uniqueness probe must never run against a snapshots path that is not a
+	// searchable directory.
 	if err := os.MkdirAll(filepath.Join(s.dir, "snapshots"), 0755); err != nil {
-		snapshot.ID = snapshotID(now, reason, summary.Key)
 		return SnapshotRecord{}, snapshot, err
 	}
-
-	id := snapshotID(now, reason, summary.Key)
-	id = s.uniqueSnapshotIDLocked(id)
-	snapshot.ID = id
 
 	index, err := s.loadIndexLocked()
 	if err != nil {
 		return SnapshotRecord{}, snapshot, err
 	}
+
+	id, err := s.uniqueSnapshotIDLocked(snapshot.ID)
+	if err != nil {
+		return SnapshotRecord{}, snapshot, err
+	}
+	snapshot.ID = id
 
 	relPath := filepath.Join("snapshots", id+".json")
 	absPath := filepath.Join(s.dir, relPath)
@@ -144,14 +147,28 @@ func snapshotID(t time.Time, reason, key string) string {
 	return t.UTC().Format("20060102T150405.000000000Z") + "-" + safeToken(reason, 32) + "-" + safeToken(key, 72)
 }
 
-func (s *Store) uniqueSnapshotIDLocked(base string) string {
+// maxSnapshotIDAttempts bounds the uniqueness probe so a Stat that keeps
+// failing (for example a snapshots directory without search permission)
+// returns an error instead of looping forever.
+const maxSnapshotIDAttempts = 100
+
+func (s *Store) uniqueSnapshotIDLocked(base string) (string, error) {
 	id := base
-	for i := 2; ; i++ {
-		if _, err := os.Stat(filepath.Join(s.dir, "snapshots", id+".json")); errors.Is(err, os.ErrNotExist) {
-			return id
+	var statErr error
+	for attempt := 0; attempt < maxSnapshotIDAttempts; attempt++ {
+		_, err := os.Stat(filepath.Join(s.dir, "snapshots", id+".json"))
+		if errors.Is(err, os.ErrNotExist) {
+			return id, nil
 		}
-		id = fmt.Sprintf("%s-%02d", base, i)
+		if err != nil {
+			statErr = err
+		}
+		id = fmt.Sprintf("%s-%02d", base, attempt+2)
 	}
+	if statErr != nil {
+		return "", fmt.Errorf("snapshot id %q: %w", base, statErr)
+	}
+	return "", fmt.Errorf("no free snapshot id after %d attempts", maxSnapshotIDAttempts)
 }
 
 func readJSON(path string, dst any) error {

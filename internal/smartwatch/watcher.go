@@ -69,6 +69,7 @@ func (w *Watcher) snapshotOnce(ctx context.Context, reason string) ([]SnapshotRe
 	}
 
 	var records []SnapshotRecord
+	var snapshots []Snapshot
 	var errs []error
 	for _, drive := range drives {
 		if drive.ScanError != nil {
@@ -76,15 +77,27 @@ func (w *Watcher) snapshotOnce(ctx context.Context, reason string) ([]SnapshotRe
 			// reports them with scan_success 0 instead.
 			continue
 		}
-		record, err := w.saveAndPublish(ctx, reason, drive)
+		record, snapshot, err := w.archiveAndPublish(ctx, reason, drive)
 		if err != nil {
 			errs = append(errs, err)
 		}
 		// Archiving and reporting are independent: a failed report append
 		// still leaves the snapshot archived, and a failed save still gets a
 		// report line. Only a successful save yields a record for the caller.
+		// The store built the Snapshot even when persistence failed, so the
+		// report line carries the same value the archive would hold.
+		snapshots = append(snapshots, snapshot)
 		if record.ID != "" {
 			records = append(records, record)
+		}
+	}
+
+	// The whole scan is published in one append after every drive was
+	// archived, so a batch cannot interleave with another scan and a marshal
+	// failure on any drive leaves the report file untouched.
+	if w.reportLog != "" {
+		if err := appendReport(w.reportLog, snapshots); err != nil {
+			errs = append(errs, err)
 		}
 	}
 
@@ -225,8 +238,13 @@ func (w *Watcher) snapshotNewDevices(ctx context.Context, seen map[string]bool, 
 		if startup && !archived[key] {
 			reason = ReasonStartup
 		}
-		if _, err := w.saveAndPublish(ctx, reason, drive); err != nil {
-			return err
+		_, snapshot, saveErr := w.archiveAndPublish(ctx, reason, drive)
+		// The daemon reports each newly archived drive as it goes: this path is
+		// not batched like --once, and it stops at the first error, so a
+		// discovery poll is not one line per measured drive.
+		reportErr := w.publishReport(snapshot)
+		if saveErr != nil || reportErr != nil {
+			return errors.Join(saveErr, reportErr)
 		}
 		archived[key] = true
 	}
@@ -287,7 +305,10 @@ func hasSuccessfulDrive(drives []smart.DriveInfo) bool {
 	return false
 }
 
-func (w *Watcher) saveAndPublish(ctx context.Context, reason string, drive smart.DriveInfo) (SnapshotRecord, error) {
+// archiveAndPublish archives the drive and publishes its event. It returns the
+// store's Snapshot so a scan can publish the whole batch to the report log in
+// one append, even when persistence failed.
+func (w *Watcher) archiveAndPublish(ctx context.Context, reason string, drive smart.DriveInfo) (SnapshotRecord, Snapshot, error) {
 	record, snapshot, saveErr := w.store.saveSnapshot(w.now(), reason, drive)
 	if saveErr == nil {
 		event := Event{
@@ -301,21 +322,18 @@ func (w *Watcher) saveAndPublish(ctx context.Context, reason string, drive smart
 		}
 		w.hub.Publish(ctx, event)
 	}
+	return record, snapshot, saveErr
+}
 
-	// The store built the Snapshot even when persistence failed, so the report
-	// is written from the same value the archive would hold. Both failures are
-	// preserved; the single-error cases keep the original error unwrapped so
-	// the no-report path is unchanged.
-	var reportErr error
-	if w.reportLog != "" {
-		reportErr = AppendReport(w.reportLog, []Snapshot{snapshot})
+// appendReport is the report-log publication used by the watcher; it is a
+// variable so tests can count how many publications a scan makes. Production
+// always uses AppendReport.
+var appendReport = AppendReport
+
+// publishReport appends one snapshot to the report log when one is configured.
+func (w *Watcher) publishReport(snapshot Snapshot) error {
+	if w.reportLog == "" {
+		return nil
 	}
-	switch {
-	case saveErr != nil && reportErr != nil:
-		return record, errors.Join(saveErr, reportErr)
-	case saveErr != nil:
-		return record, saveErr
-	default:
-		return record, reportErr
-	}
+	return appendReport(w.reportLog, []Snapshot{snapshot})
 }

@@ -376,6 +376,129 @@ func TestWatcherSnapshotOnceReportCarriesRealFixtureShape(t *testing.T) {
 	}
 }
 
+// The whole --once scan must be published in a single append, not one append
+// per drive, so two scans cannot interleave at drive granularity. The append
+// function is stubbed to count publications.
+func TestWatcherSnapshotOncePublishesOneAppendPerScan(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "report.jsonl")
+	var mu sync.Mutex
+	var batches [][]Snapshot
+	previous := appendReport
+	appendReport = func(p string, snapshots []Snapshot) error {
+		mu.Lock()
+		batches = append(batches, append([]Snapshot(nil), snapshots...))
+		mu.Unlock()
+		return AppendReport(p, snapshots)
+	}
+	defer func() { appendReport = previous }()
+
+	watcher := NewWatcher(WatcherConfig{
+		Store: NewStore(t.TempDir()),
+		Hub:   NewEventHub(""),
+		Scanner: func() ([]smart.DriveInfo, error) {
+			return []smart.DriveInfo{
+				testDrive("/dev/sda", "SN-A"),
+				testDrive("/dev/sdb", "SN-B"),
+			}, nil
+		},
+		Now:       func() time.Time { return time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC) },
+		ReportLog: path,
+	})
+	if _, err := watcher.SnapshotOnce(t.Context(), ReasonManual); err != nil {
+		t.Fatalf("SnapshotOnce() error = %v", err)
+	}
+
+	if len(batches) != 1 {
+		t.Fatalf("report publications = %d, want 1 for the whole scan", len(batches))
+	}
+	if len(batches[0]) != 2 {
+		t.Fatalf("published batch size = %d, want 2", len(batches[0]))
+	}
+	if lines := reportLines(t, path); len(lines) != 2 {
+		t.Fatalf("report lines = %d, want 2", len(lines))
+	}
+}
+
+// A marshal failure on any drive in the scan must leave the report file
+// untouched: the batch is encoded before anything is written.
+func TestWatcherSnapshotOnceMarshalFailureWritesNothing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "report.jsonl")
+	previous := marshalReportSnapshot
+	marshalReportSnapshot = func(v any) ([]byte, error) {
+		if snapshot, ok := v.(Snapshot); ok && snapshot.SMART.Serial == "SN-B" {
+			return nil, errors.New("forced marshal failure")
+		}
+		return json.Marshal(v)
+	}
+	defer func() { marshalReportSnapshot = previous }()
+
+	store := NewStore(t.TempDir())
+	watcher := NewWatcher(WatcherConfig{
+		Store: store,
+		Hub:   NewEventHub(""),
+		Scanner: func() ([]smart.DriveInfo, error) {
+			return []smart.DriveInfo{
+				testDrive("/dev/sda", "SN-A"),
+				testDrive("/dev/sdb", "SN-B"),
+			}, nil
+		},
+		Now:       func() time.Time { return time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC) },
+		ReportLog: path,
+	})
+	if _, err := watcher.SnapshotOnce(t.Context(), ReasonManual); err == nil {
+		t.Fatal("SnapshotOnce() error = nil, want the marshal failure")
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("report written despite a marshal failure: %v", err)
+	}
+	// Archiving is independent of reporting: both drives must still be archived.
+	index, err := store.LoadIndex()
+	if err != nil {
+		t.Fatalf("LoadIndex() error = %v", err)
+	}
+	if len(index.Snapshots) != 2 {
+		t.Fatalf("archived snapshots = %d, want 2", len(index.Snapshots))
+	}
+}
+
+// When the lock cannot be taken, the batch must still be appended without
+// rotation and the lock failure must be surfaced, not swallowed.
+func TestAppendReportLockFailureAppendsWithoutRotating(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "report.jsonl")
+	// A directory where the lock sidecar should be makes opening the lock fail
+	// on every OS while the report file itself stays writable.
+	if err := os.Mkdir(path+".lock", 0o755); err != nil {
+		t.Fatalf("Mkdir() error = %v", err)
+	}
+	if err := os.WriteFile(path, append(bytes.Repeat([]byte("x"), ReportLogMaxBytes-1), '\n'), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	snapshot := reportSnapshotAt("/dev/sda", "SN-A", time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC))
+
+	err := AppendReport(path, []Snapshot{snapshot})
+	if err == nil {
+		t.Fatal("AppendReport() error = nil, want the lock failure surfaced")
+	}
+	if !strings.Contains(err.Error(), ".lock") {
+		t.Fatalf("AppendReport() error = %v, want it to name the lock path", err)
+	}
+	if _, statErr := os.Stat(path + ".1"); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("rotation happened without the lock: %v", statErr)
+	}
+	lines := reportLinesTolerant(t, path)
+	if len(lines) != 1 || lines[0].SMART.Serial != "SN-A" {
+		t.Fatalf("appended lines = %+v, want the batch written despite the lock failure", lines)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	if info.Size() <= ReportLogMaxBytes {
+		t.Fatalf("file size = %d, want it to exceed the cap when rotation is skipped", info.Size())
+	}
+}
+
 // Concurrent writers through the same code path must not lose or interleave
 // lines. The file starts at the cap so the first append rotates; the new data
 // stays far below the cap, so at most one rotation happens and every new line

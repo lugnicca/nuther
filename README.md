@@ -195,10 +195,10 @@ attribute table or NVMe health log):
 sudo ./nuther watch-smart --once --report-log /var/lib/nuther/smart-reports.jsonl
 ```
 
-With `--once`, every measured drive is archived and then reported. In the
-long-running daemon the report is written when a drive is archived, so the
-periodic discovery polls report only the drives they newly archive — not every
-drive on every poll.
+With `--once`, every measured drive is archived and then reported; in the
+long-running daemon a discovery poll reports only the drives it newly archives
+and stops at the first archive or report error, so a poll is not one line per
+measured drive.
 
 The whole scan batch is encoded in memory and appended with one `O_APPEND`
 write, so a marshal failure leaves nothing behind and a reader cannot see this
@@ -214,10 +214,12 @@ The file is capped at 8 MiB: once it reaches that size it is renamed to
 `<file>.1` (replacing any previous rotation) and a fresh file is started, so
 the active path is never rewritten in place and a tailer follows the renamed
 file instead of re-reading history. At most two report files exist on disk,
-plus the `<file>.lock` sidecar. The size check, rotation and append are
-serialized by a cross-process lock on that sidecar, so overlapping scans
-cannot rotate away each other's active file. The report file is set to `0644`
-even under a restrictive umask, so a non-root collector keeps read access.
+plus the `<file>.lock` sidecar. Rotation only happens while holding a
+cross-process lock on that sidecar, so overlapping scans cannot rotate away
+each other's active file; if the lock cannot be taken the batch is still
+appended unlocked and the run exits non-zero, so the active file may
+temporarily exceed the cap. The report file is set to `0644` even under a
+restrictive umask, so a non-root collector keeps read access.
 
 ### Screenshot directory
 
